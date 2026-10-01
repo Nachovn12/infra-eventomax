@@ -209,17 +209,30 @@ Contrato conceptual previsto para los mensajes:
 
 ## Kafka
 
-**Estado:** Pendiente de implementación.
+**Estado:** Infraestructura base Kafka implementada y validada localmente.
 
-**Tópicos previstos:**
-- `productions.events`
-- `audit.timeline`
-- `*.DLT`
+### Componentes locales
+- **ZooKeeper:** `eventomax-zookeeper` (puerto 2181)
+- **Kafka:** `eventomax-kafka` (puertos 9092 para externo, 29092 interno)
+- **Kafka UI:** `eventomax-kafka-ui` (puerto 8080)
+- **Inicialización de tópicos:** Servicio idempotente `kafka-init` que asegura la creación automática de tópicos (`init-topics.sh`).
+
+### Diferencia conceptual
+Aclaración de arquitectura:
+- **RabbitMQ** = Se usa para comandos / tareas.
+- **Kafka** = Se usa para eventos.
+
+### Tópicos implementados
+- `productions.events`: Eventos de producción del core.
+- `audit.timeline`: Trazabilidad y auditoría.
+
+### Notas importantes sobre el entorno
+- El entorno local utiliza `replication-factor: 1` al existir un solo broker. El diseño cloud oficial contempla `replication-factor: 3`.
+- Los tópicos DLT (ej. `*.DLT`) se crearán por consumidor. Permanecen pendientes hasta la implementación de `ms-eventomax-audit` y `ms-eventomax-report`.
+- Los clientes productores y consumidores en Spring Boot (Spring Kafka) se implementarán en una etapa posterior.
 
 **Flujo previsto:**
 `ms-eventomax-productions` → Kafka → `ms-eventomax-audit` y `ms-eventomax-report`
-
-*(Kafka todavía no está operativo en este repositorio).*
 
 ## Cloud
 
@@ -257,8 +270,13 @@ Políticas de seguridad del repositorio:
 - [ ] Publisher Spring Boot
 - [ ] ms-eventomax-notify
 - [ ] ACK/NACK desde Spring
-- [ ] Kafka
-- [ ] Kafka UI
-- [ ] ms-eventomax-audit
-- [ ] ms-eventomax-report
+- [x] Kafka
+- [x] Kafka UI
+- [x] productions.events
+- [x] audit.timeline
+- [x] Prueba producer/consumer Kafka
+- [ ] DLT por consumidor
+- [ ] Producer Spring Boot
+- [ ] ms-eventomax-audit consumer
+- [ ] ms-eventomax-report consumer
 - [ ] Deploy cloud RabbitMQ/Kafka

@@ -1,0 +1,101 @@
+name: eventomax-kafka
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.8.11
+    container_name: eventomax-zookeeper
+    hostname: eventomax-zookeeper
+    restart: unless-stopped
+
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+    ports:
+      - "2181:2181"
+
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-log:/var/lib/zookeeper/log
+
+    healthcheck:
+      test: ["CMD-SHELL", "echo srvr | nc localhost 2181 | grep -q 'Mode:'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  kafka:
+    image: confluentinc/cp-kafka:7.8.11
+    container_name: eventomax-kafka
+    hostname: eventomax-kafka
+    restart: unless-stopped
+
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: eventomax-zookeeper:2181
+
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://eventomax-kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+    ports:
+      - "9092:9092"
+
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1"
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: eventomax-kafka-ui
+    restart: unless-stopped
+
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+    ports:
+      - "8080:8080"
+
+    environment:
+      KAFKA_CLUSTERS_0_NAME: eventomax-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: eventomax-kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: eventomax-zookeeper:2181
+      DYNAMIC_CONFIG_ENABLED: "false"
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.8.11
+    container_name: eventomax-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./init-topics.sh:/init-topics.sh
+    command: /bin/bash /init-topics.sh
+
+volumes:
+  zookeeper-data:
+  zookeeper-log:
+  kafka-data:
