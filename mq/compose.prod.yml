@@ -1,0 +1,52 @@
+name: eventomax-mq-prod
+
+services:
+  rabbitmq-1:
+    image: rabbitmq:4.3.6-management
+    container_name: eventomax-rabbitmq-1
+    hostname: rabbitmq-1
+    restart: unless-stopped
+    environment:
+      RABBITMQ_ERLANG_COOKIE: "${RABBITMQ_ERLANG_COOKIE:?RABBITMQ_ERLANG_COOKIE is required}"
+      RABBITMQ_DEFAULT_USER: "${RABBITMQ_DEFAULT_USER:?RABBITMQ_DEFAULT_USER is required}"
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}"
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-1-data:/var/lib/rabbitmq
+      - ./rabbitmq.prod.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  rabbitmq-2:
+    image: rabbitmq:4.3.6-management
+    container_name: eventomax-rabbitmq-2
+    hostname: rabbitmq-2
+    restart: unless-stopped
+    environment:
+      RABBITMQ_ERLANG_COOKIE: "${RABBITMQ_ERLANG_COOKIE:?RABBITMQ_ERLANG_COOKIE is required}"
+      RABBITMQ_DEFAULT_USER: "${RABBITMQ_DEFAULT_USER:?RABBITMQ_DEFAULT_USER is required}"
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}"
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    volumes:
+      - rabbitmq-2-data:/var/lib/rabbitmq
+      - ./rabbitmq.prod.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  rabbitmq-1-data:
+  rabbitmq-2-data:
