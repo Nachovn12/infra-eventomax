@@ -170,26 +170,73 @@ Ver logs:
 docker logs eventomax-rabbitmq --tail 100
 ```
 
-## Integración Spring Boot futura
+## Integración Spring Boot
 
-**Importante:** RabbitMQ todavía no está conectado a un microservicio Spring Boot.
+Los servicios ya se encuentran integrados con RabbitMQ:
+- **Publisher:** `ms-eventomax-productions` publica comandos RabbitMQ.
+- **Consumer:** `ms-eventomax-notify` consume comandos RabbitMQ (email, crew).
 
-Siguiente integración planificada:
-- `ms-eventomax-productions` → publisher RabbitMQ
-- `ms-eventomax-notify` → consumer RabbitMQ
+Características implementadas en la mensajería de Spring Boot:
+- ACK/NACK explícito.
+- Retries controlados.
+- Propagación hacia DLQ automatizada y validada.
+- Trazabilidad mediante `traceId` y `correlationId` en el envelope común.
 
-`ms-eventomax-notify` será:
-- sin base de datos
-- no público
-- consumidor RabbitMQ
+*Nota:* La idempotencia actual en `ms-eventomax-notify` es en memoria; no es durable ni compartida entre múltiples instancias.
 
-Posteriormente se debe implementar:
-- ACK/NACK explícito
-- retries controlados
-- idempotencia
-- DLQ
-- traceId
-- correlationId
+## RabbitMQ Cloud / AWS
+
+**Estado:** Configuración *cloud-ready* preparada; despliegue en AWS pendiente de validación.
+
+La arquitectura productiva de RabbitMQ está diseñada conceptualmente para desplegarse en una infraestructura EC2 dedicada (`ec2-mq`), separada de los microservicios (`ec2-apps`).
+
+**Archivos de configuración:**
+- `mq/compose.yml`: Desarrollo local, 1 nodo.
+- `mq/compose.prod.yml`: Configuración cloud/evaluación, clúster de 2 nodos.
+
+**Características del diseño Cloud:**
+- **Cluster formation estático:** Nodos `rabbit@rabbitmq-1` y `rabbit@rabbitmq-2`.
+- El cluster productivo/evaluación utiliza el nombre explícito `eventomax-mq-prod` para evitar depender del nodo que inicialice primero el cluster.
+- Ambos nodos comparten la misma Erlang cookie.
+- Credenciales inyectadas de forma segura mediante variables de entorno (NO existen secretos en Git).
+- *Nota académica:* Dos nodos cumplen el escenario de evaluación académico, pero no equivalen a una arquitectura de Alta Disponibilidad (HA) ideal de producción frente a fallos severos de particionamiento.
+
+**Procedimiento de Bootstrap (Inicialización Cloud):**
+El proceso de arranque productivo se realiza en este orden específico para evitar conflictos en la inicialización:
+
+1. Crear el archivo de secretos productivo (fuera de Git) a partir de la plantilla `mq/.env.prod.example`. (No asumir que el archivo real está versionado).
+2. Levantar los contenedores:
+   ```powershell
+   docker compose --env-file .\mq\.env.prod -f .\mq\compose.prod.yml up -d
+   ```
+3. Esperar a que ambos nodos alcancen el estado `healthy`.
+4. Validar que el clúster se formó correctamente:
+   ```powershell
+   docker exec eventomax-rabbitmq-1 rabbitmqctl cluster_status
+   ```
+   *(Debe esperarse que aparezcan los nodos `rabbit@rabbitmq-1` y `rabbit@rabbitmq-2`).*
+5. Importar la topología **UNA VEZ** después de formar el clúster:
+   ```powershell
+   docker exec eventomax-rabbitmq-1 rabbitmqctl import_definitions /etc/rabbitmq/definitions.json
+   ```
+6. Verificar posteriormente la creación de exchanges, queues y bindings.
+
+**¿Por qué se importa la topología manualmente después del arranque?**
+- Evita que la importación temprana a través del archivo de configuración suprima la creación por defecto del vhost `/` y el usuario productivo configurado mediante variables de entorno.
+- El archivo `definitions.json` representa metadatos globales del clúster; por ende, no corresponde que cada nodo intente realizar una importación independiente de la misma topología durante el arranque concurrente.
+
+**Seguridad y Redes:**
+Mapeo de puertos definido en el clúster EC2:
+- `rabbitmq-1`: Puerto `5672` para AMQP | Puerto `15672` para Management UI.
+- `rabbitmq-2`: Puerto `5673` para AMQP del segundo nodo | Puerto `15673` para Management UI del segundo nodo.
+
+Restricciones y consideraciones:
+- El Security Group de `ec2-mq` debe permitir el tráfico AMQP **únicamente** desde la instancia `ec2-apps` (o desde un SG explícitamente autorizado).
+- La interfaz Management UI debe estar expuesta solo a un origen administrativo autorizado.
+- **NO** se deben abrir estos puertos indiscriminadamente a Internet.
+- Los puertos internos de Erlang requeridos para el clúster se resuelven exclusivamente dentro de la red interna de Docker creada por Compose y **NO** necesitan publicarse al host físico en este escenario de nodos compartiendo la misma EC2.
+- Desde los microservicios desplegados en cloud no se usará `localhost` ni `host.docker.internal`.
+- RabbitMQ **no** transporta eventos de auditoría/reporting; su rol es exclusivo de comandos, mientras que Kafka sigue reservado para eventos.
 
 ## Envelope común
 
@@ -267,9 +314,9 @@ Políticas de seguridad del repositorio:
 - [x] Routing
 - [x] Prueba de publicación
 - [x] Prueba de Dead Letter
-- [ ] Publisher Spring Boot
-- [ ] ms-eventomax-notify
-- [ ] ACK/NACK desde Spring
+- [x] Publisher Spring Boot
+- [x] ms-eventomax-notify
+- [x] ACK/NACK desde Spring
 - [x] Kafka
 - [x] Kafka UI
 - [x] productions.events
