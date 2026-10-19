@@ -2,7 +2,7 @@
 
 ## Fuentes y alcance
 
-Revisión del 19 de octubre de 2026. Línea base: `infra-eventomax`, rama develop, commit `dd514b232844d0fa5562bd9ae20636f598ad6ac7`. Cambios locales en `fix/local-rabbitmq-demo`, sin push, merge ni deploy.
+Revisión del 19 de octubre de 2026. Línea base: `infra-eventomax`, rama `develop`, commit `dd514b232844d0fa5562bd9ae20636f598ad6ac7`. Corrección implementada en rama `fix/local-rabbitmq-demo`, publicada en GitHub y formalizada en el [Pull Request #3](https://github.com/Nachovn12/infra-eventomax/pull/3) hacia `develop`, con CI remoto aprobado. El merge a `develop` se gestiona de forma controlada; sin deploy a AWS ni modificaciones de infraestructura productiva.
 
 Fuentes entregadas por el equipo:
 
@@ -56,21 +56,19 @@ Los porcentajes son ponderaciones del documento, NO puntajes obtenidos. Implemen
 
 ## Resultado verificable de esta corrección
 
-- Suite Maven: 94 pruebas, 0 fallos, 0 errores, 0 omitidas en la ejecución que verifica reinicio. Incluye 88 pruebas existentes y seis pruebas nuevas de identidades/AMQP/persistencia.
-- Prueba adicional `actualAdminServiceWorksWithRestrictedIdentity`: crea y consulta cola, repite declaración compatible, crea/elimina exchange y binding mediante el servicio real con la identidad restringida. Resultado: una prueba aprobada. Total de casos distintos comprobados: 95.
-- Ejecución final completa: 95 casos descubiertos, 94 ejecutados correctamente, 0 fallos, 0 errores y 1 omitido (persistencia, ya comprobada en el ciclo seed/restart/verify anterior). Evidencia: final-tests.log. El arranque final con copia privada de hashes para el UID RabbitMQ también quedó healthy en otro volumen nuevo; ese broker auxiliar quedó detenido.
-- Diez comprobaciones HTTP en verify-management.py: lectura de topología/estadísticas permitida, administración y creación denegadas; cuentas AMQP sin acceso web.
-- Reinicio del nuevo broker: conservó un mensaje persistente, topología y acceso con las mismas credenciales. Se verificó y retiró solo el recurso sintético demo.restart-proof.
-- Guardas v1 y volumen no marcado: dos contenedores nuevos con carpetas ficticias montadas en solo lectura rechazaron el arranque con código 1 antes de iniciar RabbitMQ.
-- Usuarios finales: tres; solo EventoMax tiene etiqueta management. No hay guest ni cuentas administrator en el broker de prueba.
-- Generador ejecutado por segunda vez: rechazó sobrescritura y conservó los archivos privados sin cambios. git check-ignore confirmó su exclusión y git diff --check terminó sin errores. Escaneo de las contraseñas/hashes generados en código, reportes y logs capturados: sin coincidencias.
-
-Evidencias locales de esta sesión: `output/rabbitmq-ep2-review/verified-tests.log`, `service-broker-test.log` y `management-tests.log` en el workspace padre del checkout; reportes JUnit bajo rabbit-admin/target/surefire-reports. Estos artefactos locales no son pruebas de despliegue ni deben sustituir resultados de una ejecución futura.
-
-Los primeros intentos encontraron restricciones del entorno de pruebas y un cierre de canal ya cerrado en el test negativo; se corrigió el test y las ejecuciones reportadas arriba son posteriores. El rechazo AMQP esperado fue 403.
+- Suite Maven local (modo estándar sin opt-in): 95 pruebas descubiertas, 88 ejecutadas y aprobadas, 0 fallos, 0 errores, 7 omitidas intencionalmente (`LocalIdentitiesTest` requiere opt-in explícito para evitar ejecución sobre brokers compartidos).
+- Suite Maven con broker aislado temporal (`eventomax-test-isolated-ep2` en puerto AMQP 25695): 95 casos descubiertos, 95 ejecutados correctamente, 0 fallos, 0 errores, 0 omitidos. Verifica permisos restrictivos de `eventomax-rabbit-admin`, rechazo 403 al intentar alterar recursos operativos de `cmd.*` y `q.cmd.*`, y flujo de enrutamiento/ACK/DLQ con mensajes sintéticos.
+- Prueba de persistencia y reinicio: se ejecutó en dos fases (`seed` y `verify`) con reinicio exclusivo del contenedor de prueba; el mensaje persistente sobrevivió en `demo.restart-proof`, se confirmó su consumo con ACK y se retiraron los recursos temporales.
+- Diez comprobaciones HTTP en `verify-management.py` (puerto 15675): lectura de topología/estadísticas permitida para `EventoMax`, administración y creación denegadas con 401/403; cuentas AMQP sin acceso web.
+- Broker de presentación académico existente (`eventomax-ep2-demo-20261019` en puertos 25692/15672): preservado intacto y saludable, con el usuario visual `EventoMax` (`tags: [management]`, permisos `^$`) y su contraseña preconfigurada sin alteraciones.
+- Seguridad de credenciales: generador seguro con `secrets.token_urlsafe(32)` y hashes SHA-256 con salt; archivos privados protegidos por `icacls`/`0600` e ignorados en Git (`.gitignore`). `git diff --check` sin errores; escaneo de contraseñas y hashes en el diff sin coincidencias.
+- Validación remota en GitHub Actions: workflow `Infra & Rabbit Admin CI` ejecutado con éxito (`pass` en 1m08s, Run 39199505080) sobre el PR #3 hacia `develop`.
 
 ## Qué falta para una presentación completa
 
-Revisar ramas reales y probar conjuntamente Productions/Notify y el responsable de quote: configuración centralizada, beans, listeners, ACK, reintentos, logs, idempotencia y efectos de negocio. Ejecutar el frontend con login real, roles y solicitudes por el recorrido protegido, verificar los tres trabajos y documentar evidencias. Verificar el despliegue y clúster requerido en una tarea autorizada aparte. No se asignan puntajes ni se declara EP2 completa con estas pruebas aisladas.
+Esta corrección certifica la seguridad, identidades, persistencia y API administrativa de RabbitMQ a nivel de infraestructura y broker aislado. Aún queda pendiente para EP2:
+1. Revisar y validar conjuntamente en la prueba local integrada los consumidores reales en `ms-eventomax-notify` (email, crew) y el productor en `ms-eventomax-productions`: beans de configuración, listeners, ACK explícito, reintentos, logs de error, idempotencia y efectos de negocio.
+2. Ejecutar el frontend Angular integrado con login real IDaaS, roles Entra ID y flujo completo a través del API Gateway y BFF.
+3. El clúster de dos nodos y despliegue cloud corresponden a fases posteriores de infraestructura. No se asignan puntajes definitivos de la rúbrica con estas pruebas aisladas.
 
 Referencias técnicas: [permisos Management](https://www.rabbitmq.com/docs/management), [control de acceso](https://www.rabbitmq.com/docs/access-control), [hash de contraseñas](https://www.rabbitmq.com/docs/passwords).
