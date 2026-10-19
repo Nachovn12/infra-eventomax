@@ -7,9 +7,8 @@ services:
     hostname: eventomax-rabbitmq
     restart: "no"
 
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:?RABBITMQ_DEFAULT_USER is required}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}
+    secrets:
+      - local_identities
 
     ports:
       - "127.0.0.1:${RABBITMQ_AMQP_PORT:-5672}:5672"
@@ -32,3 +31,7 @@ services:
 
 volumes:
   rabbitmq-data:
+
+secrets:
+  local_identities:
+    file: ${RABBITMQ_IDENTITIES_FILE:-./.local-secrets/identities.json}
