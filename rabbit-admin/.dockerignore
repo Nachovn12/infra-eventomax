@@ -1,0 +1,7 @@
+target
+.build
+.env
+.env.*
+.git
+src/it
+*.log
