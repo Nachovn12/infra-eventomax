@@ -1,17 +1,12 @@
 #!/bin/sh
 set -eu
 
-# This entrypoint is for a new LOCAL volume only; never adopt a shared broker.
-: "${RABBITMQ_DEFAULT_USER:?Set the private local username}"
-: "${RABBITMQ_DEFAULT_PASS:?Set the private local password}"
-case "$RABBITMQ_DEFAULT_USER" in
-  guest|'') echo 'A dedicated non-guest local user is required' >&2; exit 1 ;;
-esac
-[ "${RABBITMQ_DEFAULT_VHOST:-/}" = '/' ] || {
-  echo 'The existing EventoMax topology uses vhost /; custom vhosts need a reviewed topology' >&2
+# Never adopt an existing v1 or unmarked volume. No automatic migration.
+marker=/var/lib/rabbitmq/.eventomax-local-bootstrap-v2
+[ ! -f /var/lib/rabbitmq/.eventomax-local-bootstrap-v1 ] || {
+  echo 'Legacy local volume: migration requires separate review; nothing changed.' >&2
   exit 1
 }
-marker=/var/lib/rabbitmq/.eventomax-local-bootstrap-v1
 rm -f /tmp/eventomax-bootstrap-ready
 if [ ! -f "$marker" ] && [ -d /var/lib/rabbitmq/mnesia ] &&
    [ -n "$(find /var/lib/rabbitmq/mnesia -mindepth 1 -print -quit)" ]; then
@@ -19,6 +14,23 @@ if [ ! -f "$marker" ] && [ -d /var/lib/rabbitmq/mnesia ] &&
   exit 1
 fi
 
+# Only password hashes enter the container; no passwords in environment or CLI args.
+# At-boot import suppresses creation of the default guest account on a blank node.
+cp /etc/rabbitmq/rabbitmq.conf /tmp/eventomax-local.conf
+if [ ! -f "$marker" ]; then
+  [ -s /run/secrets/local_identities ] || {
+    echo 'Private identities file missing; run prepare-local.py first.' >&2
+    exit 1
+  }
+  # Compose file secrets retain host ownership on Linux. Copy hashes privately for the broker UID.
+  (umask 077; cp /run/secrets/local_identities /tmp/eventomax-identities.json)
+  chown rabbitmq:rabbitmq /tmp/eventomax-identities.json
+  chmod 600 /tmp/eventomax-identities.json
+  printf '\ndefinitions.import_backend = local_filesystem\ndefinitions.local.path = /tmp/eventomax-identities.json\n' >> /tmp/eventomax-local.conf
+fi
+export RABBITMQ_CONFIG_FILE=/tmp/eventomax-local
+# Ignore inherited defaults; identities come exclusively from the private import.
+unset RABBITMQ_DEFAULT_USER RABBITMQ_DEFAULT_PASS RABBITMQ_DEFAULT_VHOST
 docker-entrypoint.sh rabbitmq-server &
 server_pid=$!
 trap 'kill -TERM "$server_pid" 2>/dev/null || true; wait "$server_pid" || true' TERM INT
@@ -39,14 +51,8 @@ if [ "$ready" != true ]; then
 fi
 
 if [ ! -f "$marker" ]; then
-  # The normal broker startup has already seeded user, credentials and vhost from env.
-  # Import only topology, then restrict the application user to EventoMax resources.
-  if ! gosu rabbitmq rabbitmqctl import_definitions /etc/rabbitmq/definitions.json >/dev/null 2>&1 ||
-     ! gosu rabbitmq rabbitmqctl set_user_tags "$RABBITMQ_DEFAULT_USER" >/dev/null 2>&1 ||
-     ! gosu rabbitmq rabbitmqctl set_permissions -p / "$RABBITMQ_DEFAULT_USER" \
-       '^(cmd\.(direct|topic|dead\.dlx)|q\.cmd\.(email|crew|quote)(\.dlq)?)$' \
-       '^(cmd\.(direct|topic|dead\.dlx)|q\.cmd\.(email|crew|quote)(\.dlq)?)$' \
-       '^(cmd\.(direct|topic|dead\.dlx)|q\.cmd\.(email|crew|quote)(\.dlq)?)$' >/dev/null 2>&1; then
+  # Identities have been seeded securely at boot. Import the unchanged business topology.
+  if ! gosu rabbitmq rabbitmqctl import_definitions /etc/rabbitmq/definitions.json >/dev/null 2>&1; then
     echo 'Local bootstrap failed; broker will stop without changing any other volume' >&2
     kill -TERM "$server_pid" 2>/dev/null || true
     wait "$server_pid" || true

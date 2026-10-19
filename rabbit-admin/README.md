@@ -115,6 +115,8 @@ Jackson está configurado con `spring.jackson.deserialization.fail-on-unknown-pr
 
 ## 3. Variables de Entorno Requeridas
 
+Para el broker local usar **eventomax-rabbit-admin**, nunca el usuario operativo ni EventoMax. Cargar la contraseña desde el archivo privado según [la guía local](../mq/LOCAL_BOOTSTRAP.md). ResourcePolicy y los permisos AMQP deben coincidir en demo.*.
+
 Consultar `.env.example` (no versionar `.env` con secretos reales):
 - `ENTRA_ISSUER_URI`
 - `ENTRA_AUDIENCE`

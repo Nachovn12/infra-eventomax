@@ -50,44 +50,13 @@ RabbitMQ 4.3.6 Management.
 - 5672: AMQP
 - 15672: Management UI
 
-### Variables de entorno
-La configuración de credenciales utiliza las siguientes variables de entorno:
-- `RABBITMQ_DEFAULT_USER`
-- `RABBITMQ_DEFAULT_PASS`
+### Acceso local y demostración EP2
 
-*Nota: Las variables se configuran en el archivo `.env` local, el cual no está versionado. Existe un archivo `.env.example` que sirve como plantilla sin secretos.*
+Seguir [mq/LOCAL_BOOTSTRAP.md](mq/LOCAL_BOOTSTRAP.md) para crear un entorno separado, generar credenciales privadas y entrar a Management con **EventoMax** en http://localhost:15672.
 
-## Levantar RabbitMQ
+El bootstrap local usa tres identidades: aplicación, AMQP para rabbit-admin limitado a demo.*, y observador web. Las contraseñas no se incluyen en Git ni se imprimen. El usuario operativo no sirve para entrar a la consola. Los volúmenes anteriores no se migran automáticamente.
 
-Para iniciar RabbitMQ en segundo plano:
-
-```powershell
-docker compose --env-file .env -f .\mq\compose.yml up -d
-```
-
-## Verificar estado
-
-```powershell
-docker compose --env-file .env -f .\mq\compose.yml ps
-```
-
-Estado esperado: `eventomax-rabbitmq` con status `healthy`.
-
-## Detener RabbitMQ
-
-```powershell
-docker compose --env-file .env -f .\mq\compose.yml down
-```
-
-## Management UI
-
-La interfaz de administración se encuentra disponible en:
-http://localhost:15672
-
-- Usuario configurado mediante la variable: `RABBITMQ_DEFAULT_USER`
-- Contraseña configurada mediante la variable: `RABBITMQ_DEFAULT_PASS`
-
-*(Las credenciales reales deben obtenerse del archivo `.env` local).*
+La [matriz de rúbrica EP2](mq/EP2_RABBITMQ.md) distingue pruebas de infraestructura de la integración completa. El PDF entregado tiene título EP3; se utiliza como pauta EP2 por aclaración expresa del equipo.
 
 ## Exchanges
 
@@ -135,7 +104,9 @@ q.cmd.email.dlq
 
 *Nota: Las colas `crew` y `quote` siguen exactamente el mismo patrón de Dead Letter.*
 
-## Validación realizada
+## Validación histórica declarada en la línea base
+
+La lista siguiente proviene del README anterior; no acredita por sí sola el estado actual del sistema completo. Las comprobaciones de esta corrección y sus límites están en [la matriz EP2](mq/EP2_RABBITMQ.md).
 
 Se ha verificado exitosamente el siguiente escenario en el entorno local:
 - contenedor `healthy`
@@ -172,7 +143,7 @@ docker logs eventomax-rabbitmq --tail 100
 
 ## Integración Spring Boot
 
-Los servicios ya se encuentran integrados con RabbitMQ:
+La línea base describe las siguientes integraciones, que deben revalidarse en las ramas de los microservicios antes de afirmar cumplimiento extremo a extremo:
 - **Publisher:** `ms-eventomax-productions` publica comandos RabbitMQ.
 - **Consumer:** `ms-eventomax-notify` consume comandos RabbitMQ (email, crew).
 
@@ -304,7 +275,9 @@ Políticas de seguridad del repositorio:
 - NO exponer RabbitMQ ni Kafka públicamente en cloud.
 - Abrir solamente los puertos necesarios mediante Security Groups.
 
-## Estado actual
+## Lista histórica de la línea base
+
+Estos marcadores no sustituyen la matriz de evidencias actual ni certifican despliegues.
 
 - [x] RabbitMQ Docker
 - [x] RabbitMQ Management UI
