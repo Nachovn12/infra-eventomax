@@ -3,6 +3,7 @@ services:
     build:
       context: .
     container_name: ms-eventomax-rabbit-admin
+    mem_limit: 384m
     expose:
       - "8080"
     restart: unless-stopped
@@ -17,6 +18,12 @@ services:
       ENTRA_ISSUER_URI: ${ENTRA_ISSUER_URI:?ENTRA_ISSUER_URI is required}
       ENTRA_AUDIENCE: ${ENTRA_AUDIENCE:?ENTRA_AUDIENCE is required}
       JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:InitialRAMPercentage=25.0 -XX:MaxRAMPercentage=65.0 -XX:+ExitOnOutOfMemoryError}
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     networks:
       - eventomax-net
 
