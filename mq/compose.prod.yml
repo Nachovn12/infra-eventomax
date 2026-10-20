@@ -7,18 +7,20 @@ services:
     hostname: rabbitmq-1
     restart: unless-stopped
     environment:
+      RABBITMQ_NODENAME: rabbit@rabbitmq-1
       RABBITMQ_ERLANG_COOKIE: "${RABBITMQ_ERLANG_COOKIE:?RABBITMQ_ERLANG_COOKIE is required}"
       RABBITMQ_DEFAULT_USER: "${RABBITMQ_DEFAULT_USER:?RABBITMQ_DEFAULT_USER is required}"
       RABBITMQ_DEFAULT_PASS: "${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}"
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "127.0.0.1:15672:15672"
+    networks:
+      - eventomax-net
     volumes:
       - rabbitmq-1-data:/var/lib/rabbitmq
       - ./rabbitmq.prod.conf:/etc/rabbitmq/rabbitmq.conf:ro
       - ./definitions.json:/etc/rabbitmq/definitions.json:ro
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms && rabbitmq-diagnostics -q check_port_connectivity"]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -30,18 +32,23 @@ services:
     hostname: rabbitmq-2
     restart: unless-stopped
     environment:
+      RABBITMQ_NODENAME: rabbit@rabbitmq-2
       RABBITMQ_ERLANG_COOKIE: "${RABBITMQ_ERLANG_COOKIE:?RABBITMQ_ERLANG_COOKIE is required}"
       RABBITMQ_DEFAULT_USER: "${RABBITMQ_DEFAULT_USER:?RABBITMQ_DEFAULT_USER is required}"
       RABBITMQ_DEFAULT_PASS: "${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}"
     ports:
-      - "5673:5672"
-      - "15673:15672"
+      - "127.0.0.1:15673:15672"
+    networks:
+      - eventomax-net
+    depends_on:
+      rabbitmq-1:
+        condition: service_healthy
     volumes:
       - rabbitmq-2-data:/var/lib/rabbitmq
       - ./rabbitmq.prod.conf:/etc/rabbitmq/rabbitmq.conf:ro
       - ./definitions.json:/etc/rabbitmq/definitions.json:ro
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms && rabbitmq-diagnostics -q check_port_connectivity"]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -50,3 +57,9 @@ services:
 volumes:
   rabbitmq-1-data:
   rabbitmq-2-data:
+
+# Precreate once in the future deployment phase; all application stacks reuse it.
+networks:
+  eventomax-net:
+    name: eventomax-net
+    external: true

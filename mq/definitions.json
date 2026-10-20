@@ -1,4 +1,9 @@
 {
+  "vhosts": [
+    {
+      "name": "/"
+    }
+  ],
   "exchanges": [
     {
       "name": "cmd.direct",

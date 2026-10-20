@@ -5,9 +5,9 @@ spring:
     deserialization:
       fail-on-unknown-properties: true
   rabbitmq:
-    host: ${RABBITMQ_HOST}
+    host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
-    virtual-host: ${RABBITMQ_VHOST}
+    virtual-host: ${RABBITMQ_VHOST:/}
     username: ${RABBITMQ_USERNAME}
     password: ${RABBITMQ_PASSWORD}
     connection-timeout: 3s

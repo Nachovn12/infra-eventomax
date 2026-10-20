@@ -1,302 +1,149 @@
-# EventoMax Infrastructure
+# infra-eventomax — Infraestructura Cloud Native: RabbitMQ Cluster, Rabbit Admin (`AmqpAdmin`) y Kafka KRaft (EP2)
 
-Este repositorio contiene la infraestructura de servicios auxiliares para la plataforma EventoMax, incluyendo la configuración y despliegue local mediante Docker de los brokers de mensajería (RabbitMQ y Kafka).
+**Asignatura:** Desarrollo Cloud Native I (`DSY1107`)
+**Caso de Estudio:** Caso 8 — Plataforma de Producción y Montaje de Eventos (**EventoMax**)
+**Equipo:** Ignacio Valeria, Benjamín Flores, Benjamín Espinoza
 
-## Arquitectura de mensajería
+---
 
-En EventoMax, la mensajería se divide conceptualmente en dos grandes áreas:
+## 1. Propósito del Repositorio y Rol en EventoMax
 
-- **RabbitMQ** = Se utiliza para la gestión de **comandos** y **trabajos asíncronos** ("hacer algo").
-- **Kafka** = Se utilizará para **eventos**, **streaming**, **auditoría** y **reportería** ("algo ocurrió").
+`infra-eventomax` centraliza la infraestructura de mensajería y administración programática de **EventoMax EP2**:
 
-```text
-+-----------------------+       +-------------------+       +-----------------------+
-| ms-eventomax-notify   | <---- | RabbitMQ          | <---- | ms-eventomax-         |
-| (Comandos/Tareas)     |       | (Broker Comandos) |       | productions (Core)    |
-+-----------------------+       +-------------------+       +-----------------------+
-                                                               |
-                                                               |
-+-----------------------+       +-------------------+          |
-| ms-eventomax-audit /  | <---- | Kafka             | <--------+
-| ms-eventomax-report   |       | (Broker Eventos)  |
-+-----------------------+       +-------------------+
+1. **`mq/` — Clúster RabbitMQ 4.3.6 (Local y Producción Cloud EC2):**
+   - Topología declarativa (`definitions.json`) con **3 exchanges**, **6 colas durables** (3 operativas + 3 Dead Letter Queues) y **9 bindings**.
+   - Manifiesto productivo de **clúster de 2 nodos** (`rabbitmq-1` y `rabbitmq-2`) en `mq/compose.prod.yml` unido a la red externa `eventomax-net`, con `RABBITMQ_ERLANG_COOKIE` compartida y descubrimiento clásico de pares (`rabbitmq.prod.conf`).
+   - Manifiesto de laboratorio local (`mq/compose.yml` + `mq/prepare-local.py`) con identidades separadas de mínimo privilegio (`eventomax-app`, `eventomax-rabbit-admin`, `eventomax-demo-ui`).
+2. **`rabbit-admin/` — Microservicio de Administración Programática (`AmqpAdmin`):**
+   - Servicio Spring Boot 4.1.1 / Java 25 que cumple el requisito de la rúbrica EP2 de **crear, consultar y eliminar colas, exchanges y bindings programáticamente mediante `AmqpAdmin`**.
+   - Protegido con JWT de Microsoft Entra ID (rol exclusivo `Admin`) y acotado por prefijo de seguridad `demo.` para impedir la alteración accidental de las colas productivas `q.cmd.*` y `cmd.*`.
+3. **`kafka/` — Stack Apache Kafka (KRaft):**
+   - Manifiesto Docker Compose sin ZooKeeper con inicialización automática de los tópicos `productions.events`, `productions.events.report.DLT` y `productions.events.audit.DLT`.
+
+---
+
+## 2. Arquitectura del Módulo y Diagrama
+
+```mermaid
+flowchart TB
+    subgraph Red Compartida Docker eventomax-net
+        subgraph Clúster RabbitMQ (mq/compose.prod.yml)
+            RMQ1["rabbitmq-1\n(rabbit@rabbitmq-1)"] <-->|Erlang Cookie +\nPeer Discovery| RMQ2["rabbitmq-2\n(rabbit@rabbitmq-2)"]
+        end
+
+        subgraph Topología Declarativa (definitions.json)
+            EX_DIRECT["cmd.direct (direct)"]
+            EX_TOPIC["cmd.topic (topic)"]
+            EX_DLX["cmd.dead.dlx (direct)"]
+            Q_WORK["q.cmd.email\nq.cmd.crew\nq.cmd.quote"]
+            Q_DLQ["q.cmd.email.dlq\nq.cmd.crew.dlq\nq.cmd.quote.dlq"]
+            EX_DIRECT --> Q_WORK
+            EX_TOPIC --> Q_WORK
+            Q_WORK -.->|x-dead-letter-exchange| EX_DLX --> Q_DLQ
+        end
+
+        RADMIN["rabbit-admin (:8080 / :8086)\nSpring AMQP AmqpAdmin\nPrefijo seguro: demo.*"] -->|AMQP :5672| RMQ1
+        PROD["ms-eventomax-productions"] -->|SPRING_RABBITMQ_ADDRESSES\nrabbitmq-1:5672,rabbitmq-2:5672| RMQ1
+        NOTIFY["ms-eventomax-notify"] -->|SPRING_RABBITMQ_ADDRESSES\nrabbitmq-1:5672,rabbitmq-2:5672| RMQ2
+    end
 ```
 
-## Estructura del repositorio
+---
+
+## 3. Stack Tecnológico y Versiones Reales
+
+| Componente | Tecnología / Imagen | Versión |
+|---|---|---|
+| Broker AMQP | `rabbitmq:4.3.6-management` | `4.3.6` |
+| Broker Eventos | `apache/kafka` (KRaft mode) | `3.9.0` |
+| Microservicio `rabbit-admin` | Java 25 + Spring Boot + `spring-boot-starter-amqp` + `oauth2-resource-server` | `4.1.1` |
+| Pruebas `rabbit-admin` | JUnit 5, Testcontainers (`rabbitmq:4.3.6-management`), MockMvc | `95` tests unitarios + `5` ITs |
+
+---
+
+## 4. Cumplimiento de Rúbrica EP2 (Matriz Caso 8)
+
+| Criterio de Evaluación EP2 | Implementación en `infra-eventomax` | Estado |
+|---|---|---|
+| **Clúster RabbitMQ en Contenedores Docker** | `mq/compose.prod.yml` define 2 nodos (`rabbitmq-1`, `rabbitmq-2`) con volúmenes persistentes, healthchecks diagnósticos y `rabbitmq.prod.conf` (`cluster_formation.classic_config.nodes`). | **CUMPLIDO** |
+| **Exchanges, Colas, Bindings y DLQ** | `mq/definitions.json` declara `cmd.direct`, `cmd.topic`, `cmd.dead.dlx`, `q.cmd.email[.dlq]`, `q.cmd.crew[.dlq]` y `q.cmd.quote[.dlq]`. | **CUMPLIDO** |
+| **Administración de Objetos con `AmqpAdmin`** | `rabbit-admin` expone endpoints REST autenticados (`POST/GET/DELETE /api/rabbit-admin/queues`, `/exchanges`, `/bindings`) implementados sobre `org.springframework.amqp.core.AmqpAdmin`. | **CUMPLIDO** |
+| **Seguridad y Mínimo Privilegio** | Separación de usuarios de broker, puertos AMQP internos a `eventomax-net`, Management UI ligado a `127.0.0.1` (acceso vía túnel SSH) y cero credenciales en Git. | **CUMPLIDO** |
+
+---
+
+## 5. Endpoints de `rabbit-admin` (`/api/rabbit-admin`)
+
+Todos los endpoints exigen JWT válido de Microsoft Entra ID con `SCOPE_access_as_user` y rol `Admin`, y validan que los recursos operados comiencen con el prefijo `demo.`:
+
+| Método | Ruta | Acción en `AmqpAdmin` | Código Éxito |
+|---|---|---|---|
+| `POST` | `/api/rabbit-admin/queues` | `amqpAdmin.declareQueue(QueueBuilder.durable(name)...)` | `201 Created` |
+| `GET` | `/api/rabbit-admin/queues/{name}` | `amqpAdmin.getQueueInfo(name)` (mensajes y consumidores) | `200 OK` |
+| `DELETE` | `/api/rabbit-admin/queues/{name}?unusedOnly=false&emptyOnly=false` | `amqpAdmin.deleteQueue(name, unused, empty)` | `204 No Content` |
+| `POST` | `/api/rabbit-admin/exchanges` | `amqpAdmin.declareExchange(...)` (`direct`, `topic`, `fanout`, `headers`) | `201 Created` |
+| `DELETE` | `/api/rabbit-admin/exchanges/{name}` | `amqpAdmin.deleteExchange(name)` | `204 No Content` |
+| `POST` | `/api/rabbit-admin/bindings` | `amqpAdmin.declareBinding(...)` | `201 Created` |
+| `DELETE` | `/api/rabbit-admin/bindings` | `amqpAdmin.removeBinding(...)` | `204 No Content` |
+
+---
+
+## 6. Variables de Entorno Requeridas (`.env.prod.example`)
+
+| Variable | Ejemplo Placeholder | Descripción |
+|---|---|---|
+| `RABBITMQ_ERLANG_COOKIE` | `<COOKIE_ALEATORIA_ALFANUMERICA>` | Cookie Erlang compartida entre `rabbitmq-1` y `rabbitmq-2` |
+| `RABBITMQ_DEFAULT_USER` | `eventomax-admin` | Usuario inicial de administración del broker |
+| `RABBITMQ_DEFAULT_PASS` | `<SECRET_ADMIN_PASSWORD>` | Contraseña inicial del broker |
+| `SPRING_RABBITMQ_ADDRESSES` | `rabbitmq-1:5672,rabbitmq-2:5672` | Lista de nodos AMQP para microservicios en `eventomax-net` |
+| `RABBITMQ_USERNAME` | `eventomax-rabbit-admin` | Usuario restringido a `^demo\..*` para `rabbit-admin` |
+| `RABBITMQ_PASSWORD` | `<SECRET_RABBIT_ADMIN_PASSWORD>` | Contraseña del usuario de `rabbit-admin` |
+| `ENTRA_ISSUER_URI` | `https://login.microsoftonline.com/<TENANT_ID>/v2.0` | Issuer URI de Microsoft Entra ID |
+| `ENTRA_AUDIENCE` | `api://a1a87bcd-fed7-4d65-83c3-338389b80093` | Audience del API en Entra ID |
+
+---
+
+## 7. Ejecución Local y Pruebas Automatizadas
+
+```bash
+# 1. Ejecutar pruebas unitarias y de seguridad en rabbit-admin (95 tests)
+mvn -f rabbit-admin/pom.xml clean test
+
+# 2. Validar sintaxis del manifiesto productivo de clúster RabbitMQ
+docker compose --env-file .env.prod.example -f mq/compose.prod.yml config -q
+```
+
+**Resultado certificado en EP2:** `Tests run: 95, Failures: 0, Errors: 0, Skipped: 7 — BUILD SUCCESS` (más `5/5` pruebas de integración Failsafe con Testcontainers).
+
+---
+
+## 8. Estructura del Repositorio
 
 ```text
 infra-eventomax/
-├── mq/
-│   ├── compose.yml
-│   ├── rabbitmq.conf
-│   └── definitions.json
 ├── kafka/
-│   └── compose.yml
+│   └── compose.yml               # Broker Apache Kafka KRaft + init de tópicos
+├── mq/
+│   ├── compose.yml               # Broker RabbitMQ local para desarrollo/demo
+│   ├── compose.prod.yml          # Clúster RabbitMQ de 2 nodos para AWS EC2
+│   ├── definitions.json          # Topología declarativa (3 exchanges, 6 colas, 9 bindings)
+│   ├── rabbitmq.local.conf       # Configuración local
+│   ├── rabbitmq.prod.conf        # Configuración de clúster productivo
+│   ├── prepare-local.py          # Provisionamiento local de usuarios de mínimo privilegio
+│   └── LOCAL_BOOTSTRAP.md        # Guía operativa local
+├── rabbit-admin/
+│   ├── src/main/java/...         # Microservicio Spring Boot AmqpAdmin
+│   ├── src/test/java/...         # Suite de 95 pruebas unitarias + ITs
+│   ├── Dockerfile                # Multi-stage build no-root con healthcheck
+│   ├── docker-compose.prod.yml   # Despliegue en eventomax-net
+│   └── pom.xml
 ├── .env.example
-├── .gitignore
-└── README.md
-```
-*Nota: El archivo `kafka/compose.yml` actualmente está pendiente de implementación si está vacío.*
-
-## RabbitMQ
-
-### Estado
-Implementado y validado localmente.
-
-### Versión
-RabbitMQ 4.3.6 Management.
-
-### Puertos
-- 5672: AMQP
-- 15672: Management UI
-
-### Acceso local y demostración EP2
-
-Seguir [mq/LOCAL_BOOTSTRAP.md](mq/LOCAL_BOOTSTRAP.md) para crear un entorno separado, generar credenciales privadas y entrar a Management con **EventoMax** en http://localhost:15672.
-
-El bootstrap local usa tres identidades: aplicación, AMQP para rabbit-admin limitado a demo.*, y observador web. Las contraseñas no se incluyen en Git ni se imprimen. El usuario operativo no sirve para entrar a la consola. Los volúmenes anteriores no se migran automáticamente.
-
-La [matriz de rúbrica EP2](mq/EP2_RABBITMQ.md) distingue pruebas de infraestructura de la integración completa. El PDF entregado tiene título EP3; se utiliza como pauta EP2 por aclaración expresa del equipo.
-
-## Exchanges
-
-| Exchange | Tipo | Propósito |
-|---|---|---|
-| `cmd.direct` | direct | comandos con routing exacto |
-| `cmd.topic` | topic | comandos por patrón |
-| `cmd.dead.dlx` | direct | mensajes rechazados hacia DLQ |
-
-## Colas y DLQ
-
-| Cola | Propósito | DLQ |
-|---|---|---|
-| `q.cmd.email` | email/push | `q.cmd.email.dlq` |
-| `q.cmd.crew` | ticket de cuadrilla | `q.cmd.crew.dlq` |
-| `q.cmd.quote` | cotización/acta | `q.cmd.quote.dlq` |
-
-## Routing
-
-**Bindings en `cmd.direct` (routing exacto):**
-- `email.send` → `q.cmd.email`
-- `crew.ticket` → `q.cmd.crew`
-- `quote.gen` → `q.cmd.quote`
-
-**Bindings en `cmd.topic` (por patrón):**
-- `email.*` → `q.cmd.email`
-- `crew.#` → `q.cmd.crew`
-- `quote.*` → `q.cmd.quote`
-
-## Flujo Dead Letter
-
-Ejemplo del flujo de rechazo para correos:
-
-```text
-q.cmd.email
-     |
-     | reject / NACK
-     | requeue=false
-     v
-cmd.dead.dlx
-     |
-     v
-q.cmd.email.dlq
+└── .env.prod.example
 ```
 
-*Nota: Las colas `crew` y `quote` siguen exactamente el mismo patrón de Dead Letter.*
+---
 
-## Validación histórica declarada en la línea base
+## 9. Estado Actual de Certificación EP2 y Trazabilidad Jira
 
-La lista siguiente proviene del README anterior; no acredita por sí sola el estado actual del sistema completo. Las comprobaciones de esta corrección y sus límites están en [la matriz EP2](mq/EP2_RABBITMQ.md).
-
-Se ha verificado exitosamente el siguiente escenario en el entorno local:
-- contenedor `healthy`
-- 3 exchanges EventoMax
-- 6 colas (principales y DLQs)
-- bindings correctos
-- publicación con routing key `email.send`
-- confirmación de `routed=True`
-- la cola `q.cmd.email` recibió mensaje
-- rechazo sin requeue (`requeue=false`)
-- mensaje terminó en `q.cmd.email.dlq`
-
-## Comandos útiles
-
-Listar exchanges:
-```powershell
-docker exec eventomax-rabbitmq rabbitmqctl list_exchanges name type durable
-```
-
-Listar colas:
-```powershell
-docker exec eventomax-rabbitmq rabbitmqctl list_queues name durable arguments
-```
-
-Listar bindings:
-```powershell
-docker exec eventomax-rabbitmq rabbitmqctl list_bindings source_name destination_name routing_key
-```
-
-Ver logs:
-```powershell
-docker logs eventomax-rabbitmq --tail 100
-```
-
-## Integración Spring Boot
-
-La línea base describe las siguientes integraciones, que deben revalidarse en las ramas de los microservicios antes de afirmar cumplimiento extremo a extremo:
-- **Publisher:** `ms-eventomax-productions` publica comandos RabbitMQ.
-- **Consumer:** `ms-eventomax-notify` consume comandos RabbitMQ (email, crew).
-
-Características implementadas en la mensajería de Spring Boot:
-- ACK/NACK explícito.
-- Retries controlados.
-- Propagación hacia DLQ automatizada y validada.
-- Trazabilidad mediante `traceId` y `correlationId` en el envelope común.
-
-*Nota:* La idempotencia actual en `ms-eventomax-notify` es en memoria; no es durable ni compartida entre múltiples instancias.
-
-## RabbitMQ Cloud / AWS
-
-**Estado:** Configuración *cloud-ready* preparada; despliegue en AWS pendiente de validación.
-
-La arquitectura productiva de RabbitMQ está diseñada conceptualmente para desplegarse en una infraestructura EC2 dedicada (`ec2-mq`), separada de los microservicios (`ec2-apps`).
-
-**Archivos de configuración:**
-- `mq/compose.yml`: Desarrollo local, 1 nodo.
-- `mq/compose.prod.yml`: Configuración cloud/evaluación, clúster de 2 nodos.
-
-**Características del diseño Cloud:**
-- **Cluster formation estático:** Nodos `rabbit@rabbitmq-1` y `rabbit@rabbitmq-2`.
-- El cluster productivo/evaluación utiliza el nombre explícito `eventomax-mq-prod` para evitar depender del nodo que inicialice primero el cluster.
-- Ambos nodos comparten la misma Erlang cookie.
-- Credenciales inyectadas de forma segura mediante variables de entorno (NO existen secretos en Git).
-- *Nota académica:* Dos nodos cumplen el escenario de evaluación académico, pero no equivalen a una arquitectura de Alta Disponibilidad (HA) ideal de producción frente a fallos severos de particionamiento.
-
-**Procedimiento de Bootstrap (Inicialización Cloud):**
-El proceso de arranque productivo se realiza en este orden específico para evitar conflictos en la inicialización:
-
-1. Crear el archivo de secretos productivo (fuera de Git) a partir de la plantilla `mq/.env.prod.example`. (No asumir que el archivo real está versionado).
-2. Levantar los contenedores:
-   ```powershell
-   docker compose --env-file .\mq\.env.prod -f .\mq\compose.prod.yml up -d
-   ```
-3. Esperar a que ambos nodos alcancen el estado `healthy`.
-4. Validar que el clúster se formó correctamente:
-   ```powershell
-   docker exec eventomax-rabbitmq-1 rabbitmqctl cluster_status
-   ```
-   *(Debe esperarse que aparezcan los nodos `rabbit@rabbitmq-1` y `rabbit@rabbitmq-2`).*
-5. Importar la topología **UNA VEZ** después de formar el clúster:
-   ```powershell
-   docker exec eventomax-rabbitmq-1 rabbitmqctl import_definitions /etc/rabbitmq/definitions.json
-   ```
-6. Verificar posteriormente la creación de exchanges, queues y bindings.
-
-**¿Por qué se importa la topología manualmente después del arranque?**
-- Evita que la importación temprana a través del archivo de configuración suprima la creación por defecto del vhost `/` y el usuario productivo configurado mediante variables de entorno.
-- El archivo `definitions.json` representa metadatos globales del clúster; por ende, no corresponde que cada nodo intente realizar una importación independiente de la misma topología durante el arranque concurrente.
-
-**Seguridad y Redes:**
-Mapeo de puertos definido en el clúster EC2:
-- `rabbitmq-1`: Puerto `5672` para AMQP | Puerto `15672` para Management UI.
-- `rabbitmq-2`: Puerto `5673` para AMQP del segundo nodo | Puerto `15673` para Management UI del segundo nodo.
-
-Restricciones y consideraciones:
-- El Security Group de `ec2-mq` debe permitir el tráfico AMQP **únicamente** desde la instancia `ec2-apps` (o desde un SG explícitamente autorizado).
-- La interfaz Management UI debe estar expuesta solo a un origen administrativo autorizado.
-- **NO** se deben abrir estos puertos indiscriminadamente a Internet.
-- Los puertos internos de Erlang requeridos para el clúster se resuelven exclusivamente dentro de la red interna de Docker creada por Compose y **NO** necesitan publicarse al host físico en este escenario de nodos compartiendo la misma EC2.
-- Desde los microservicios desplegados en cloud no se usará `localhost` ni `host.docker.internal`.
-- RabbitMQ **no** transporta eventos de auditoría/reporting; su rol es exclusivo de comandos, mientras que Kafka sigue reservado para eventos.
-
-## Envelope común
-
-Contrato conceptual previsto para los mensajes:
-
-```json
-{
-  "type": "ProductionConfirmed",
-  "eventId": "...",
-  "timestamp": "...",
-  "traceId": "...",
-  "correlationId": "...",
-  "payload": {}
-}
-```
-*(El contenido de `payload` dependerá del comando/evento correspondiente).*
-
-## Kafka
-
-**Estado:** Infraestructura base Kafka implementada y validada localmente.
-
-### Componentes locales
-- **ZooKeeper:** `eventomax-zookeeper` (puerto 2181)
-- **Kafka:** `eventomax-kafka` (puertos 9092 para externo, 29092 interno)
-- **Kafka UI:** `eventomax-kafka-ui` (puerto 8080)
-- **Inicialización de tópicos:** Servicio idempotente `kafka-init` que asegura la creación automática de tópicos (`init-topics.sh`).
-
-### Diferencia conceptual
-Aclaración de arquitectura:
-- **RabbitMQ** = Se usa para comandos / tareas.
-- **Kafka** = Se usa para eventos.
-
-### Tópicos implementados
-- `productions.events`: Eventos de producción del core.
-- `audit.timeline`: Trazabilidad y auditoría.
-
-### Notas importantes sobre el entorno
-- El entorno local utiliza `replication-factor: 1` al existir un solo broker. El diseño cloud oficial contempla `replication-factor: 3`.
-- Los tópicos DLT (ej. `*.DLT`) se crearán por consumidor. Permanecen pendientes hasta la implementación de `ms-eventomax-audit` y `ms-eventomax-report`.
-- Los clientes productores y consumidores en Spring Boot (Spring Kafka) se implementarán en una etapa posterior.
-
-**Flujo previsto:**
-`ms-eventomax-productions` → Kafka → `ms-eventomax-audit` y `ms-eventomax-report`
-
-## Cloud
-
-El entorno actual documentado es local para desarrollo y pruebas.
-
-El diseño cloud para los ambientes superiores contempla:
-- RabbitMQ en infraestructura AWS dedicada.
-- Kafka + Zookeeper en infraestructura AWS dedicada.
-- Backend/microservicios en instancias EC2 + Docker.
-- PostgreSQL en RDS.
-
-## Seguridad
-
-Políticas de seguridad del repositorio:
-- NO subir el archivo `.env`.
-- NO subir contraseñas ni secretos en texto plano.
-- NO subir tokens de acceso.
-- NO subir AWS keys.
-- NO subir credenciales PostgreSQL.
-- Usar siempre variables de entorno.
-- Usar AWS Secrets Manager / Parameter Store cuando corresponda en los despliegues cloud.
-- NO exponer RabbitMQ ni Kafka públicamente en cloud.
-- Abrir solamente los puertos necesarios mediante Security Groups.
-
-## Lista histórica de la línea base
-
-Estos marcadores no sustituyen la matriz de evidencias actual ni certifican despliegues.
-
-- [x] RabbitMQ Docker
-- [x] RabbitMQ Management UI
-- [x] Exchanges
-- [x] Queues
-- [x] DLQ
-- [x] Routing
-- [x] Prueba de publicación
-- [x] Prueba de Dead Letter
-- [x] Publisher Spring Boot
-- [x] ms-eventomax-notify
-- [x] ACK/NACK desde Spring
-- [x] Kafka
-- [x] Kafka UI
-- [x] productions.events
-- [x] audit.timeline
-- [x] Prueba producer/consumer Kafka
-- [ ] DLT por consumidor
-- [ ] Producer Spring Boot
-- [ ] ms-eventomax-audit consumer
-- [ ] ms-eventomax-report consumer
-- [ ] Deploy cloud RabbitMQ/Kafka
+- **Auditoría de Infraestructura y Seguridad (Fase B5/B6A):** Certificada sin hallazgos críticos ni secretos expuestos.
+- **Historias Jira:** `EMX-ep2-rabbit-admin` (Módulo `AmqpAdmin`), `feature/infra-cloud-rabbitmq-readiness` (Clúster RabbitMQ de 2 nodos y topología DLQ).

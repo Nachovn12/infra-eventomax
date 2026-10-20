@@ -1,0 +1,25 @@
+services:
+  rabbit-admin:
+    build:
+      context: .
+    container_name: ms-eventomax-rabbit-admin
+    expose:
+      - "8080"
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: ${SERVER_PORT:-8080}
+      SPRING_RABBITMQ_ADDRESSES: ${SPRING_RABBITMQ_ADDRESSES:-rabbitmq-1:5672,rabbitmq-2:5672}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq-1}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:?RABBITMQ_USERNAME is required}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      ENTRA_ISSUER_URI: ${ENTRA_ISSUER_URI:?ENTRA_ISSUER_URI is required}
+      ENTRA_AUDIENCE: ${ENTRA_AUDIENCE:?ENTRA_AUDIENCE is required}
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:InitialRAMPercentage=25.0 -XX:MaxRAMPercentage=65.0 -XX:+ExitOnOutOfMemoryError}
+    networks:
+      - eventomax-net
+
+networks:
+  eventomax-net:
+    external: true
