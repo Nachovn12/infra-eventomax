@@ -44,7 +44,7 @@ services:
       - eventomax-net
     depends_on:
       rabbitmq-1:
-        condition: service_healthy
+        condition: service_started
     volumes:
       - rabbitmq-2-data:/var/lib/rabbitmq
       - ./rabbitmq.prod.conf:/etc/rabbitmq/rabbitmq.conf:ro

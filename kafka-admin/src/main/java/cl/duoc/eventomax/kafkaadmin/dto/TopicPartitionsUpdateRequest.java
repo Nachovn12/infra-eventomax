@@ -8,3 +8,4 @@ public record TopicPartitionsUpdateRequest(
         @Max(value = 64, message = "El número total de particiones no debe exceder 64")
         int totalPartitions
 ) {}
+

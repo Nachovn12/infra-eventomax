@@ -19,7 +19,7 @@ services:
     volumes:
       - rabbitmq-1-cluster-data:/var/lib/rabbitmq
       - ./rabbitmq.prod.conf:/etc/rabbitmq/rabbitmq.conf:ro
-      - ./definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ./definitions.cluster.json:/etc/rabbitmq/definitions.json:ro
     healthcheck:
       test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms && rabbitmq-diagnostics -q check_port_connectivity"]
       interval: 15s
@@ -44,11 +44,11 @@ services:
       - eventomax-mq-cluster-net
     depends_on:
       rabbitmq-1:
-        condition: service_healthy
+        condition: service_started
     volumes:
       - rabbitmq-2-cluster-data:/var/lib/rabbitmq
       - ./rabbitmq.prod.conf:/etc/rabbitmq/rabbitmq.conf:ro
-      - ./definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ./definitions.cluster.json:/etc/rabbitmq/definitions.json:ro
     healthcheck:
       test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms && rabbitmq-diagnostics -q check_port_connectivity"]
       interval: 15s
@@ -63,3 +63,4 @@ volumes:
 networks:
   eventomax-mq-cluster-net:
     driver: bridge
+

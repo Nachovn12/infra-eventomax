@@ -5,3 +5,4 @@ public record ConsumerGroupSummaryResponse(
         String state,
         boolean simpleConsumerGroup
 ) {}
+

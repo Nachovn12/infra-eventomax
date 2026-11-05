@@ -7,3 +7,4 @@ public record TopicConfigUpdateRequest(
         @NotEmpty(message = "El mapa de configuraciones no puede estar vacío")
         Map<String, String> configs
 ) {}
+

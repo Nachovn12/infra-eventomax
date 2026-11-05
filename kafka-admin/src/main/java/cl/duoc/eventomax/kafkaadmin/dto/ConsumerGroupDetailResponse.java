@@ -16,3 +16,4 @@ public record ConsumerGroupDetailResponse(
             List<String> assignedPartitions
     ) {}
 }
+
