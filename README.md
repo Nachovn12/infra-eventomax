@@ -28,25 +28,25 @@
 
 ```mermaid
 flowchart TB
-    subgraph Red Compartida Docker eventomax-net
-        subgraph Clúster RabbitMQ (mq/compose.prod.yml)
-            RMQ1["rabbitmq-1\n(rabbit@rabbitmq-1)"] <-->|Erlang Cookie +\nPeer Discovery| RMQ2["rabbitmq-2\n(rabbit@rabbitmq-2)"]
+    subgraph group1["Red Compartida Docker eventomax-net"]
+        subgraph group2["Clúster RabbitMQ (mq/compose.prod.yml)"]
+            RMQ1["rabbitmq-1<br/>(rabbit@rabbitmq-1)"] <-->|"Erlang Cookie +<br/>Peer Discovery"| RMQ2["rabbitmq-2<br/>(rabbit@rabbitmq-2)"]
         end
 
-        subgraph Topología Declarativa (definitions.json)
+        subgraph group3["Topología Declarativa (definitions.json)"]
             EX_DIRECT["cmd.direct (direct)"]
             EX_TOPIC["cmd.topic (topic)"]
             EX_DLX["cmd.dead.dlx (direct)"]
-            Q_WORK["q.cmd.email\nq.cmd.crew\nq.cmd.quote"]
-            Q_DLQ["q.cmd.email.dlq\nq.cmd.crew.dlq\nq.cmd.quote.dlq"]
+            Q_WORK["q.cmd.email<br/>q.cmd.crew<br/>q.cmd.quote"]
+            Q_DLQ["q.cmd.email.dlq<br/>q.cmd.crew.dlq<br/>q.cmd.quote.dlq"]
             EX_DIRECT --> Q_WORK
             EX_TOPIC --> Q_WORK
-            Q_WORK -.->|x-dead-letter-exchange| EX_DLX --> Q_DLQ
+            Q_WORK -.->|"x-dead-letter-exchange"| EX_DLX --> Q_DLQ
         end
 
-        RADMIN["rabbit-admin (:8080 / :8086)\nSpring AMQP AmqpAdmin\nPrefijo seguro: demo.*"] -->|AMQP :5672| RMQ1
-        PROD["ms-eventomax-productions"] -->|SPRING_RABBITMQ_ADDRESSES\nrabbitmq-1:5672,rabbitmq-2:5672| RMQ1
-        NOTIFY["ms-eventomax-notify"] -->|SPRING_RABBITMQ_ADDRESSES\nrabbitmq-1:5672,rabbitmq-2:5672| RMQ2
+        RADMIN["rabbit-admin (:8080 / :8086)<br/>Spring AMQP AmqpAdmin<br/>Prefijo seguro: demo.*"] -->|"AMQP :5672"| RMQ1
+        PROD["ms-eventomax-productions"] -->|"SPRING_RABBITMQ_ADDRESSES<br/>rabbitmq-1:5672,rabbitmq-2:5672"| RMQ1
+        NOTIFY["ms-eventomax-notify"] -->|"SPRING_RABBITMQ_ADDRESSES<br/>rabbitmq-1:5672,rabbitmq-2:5672"| RMQ2
     end
 ```
 
