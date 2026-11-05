@@ -210,7 +210,7 @@ services:
       KAFKA_CLUSTERS_0_NAME: eventomax-cluster
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:29092,kafka-2:29093,kafka-3:29094
       KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper-1:2181,zookeeper-2:2182,zookeeper-3:2183
-      DYNAMIC_CONFIG_ENABLED: "false"
+      DYNAMIC_CONFIG_ENABLED: "true"
 
   # =========================================================================
   # Topic Provisioning (RF=3 y DLTs)

@@ -1,0 +1,20 @@
+name: eventomax-kafka-ui
+
+services:
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: eventomax-kafka-ui
+    restart: unless-stopped
+    ports:
+      - "${KAFKA_UI_PORT:-8080}:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: "${KAFKA_CLUSTER_NAME:-eventomax-cluster}"
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "${KAFKA_BOOTSTRAP_SERVERS:-kafka-1:29092,kafka-2:29093,kafka-3:29094}"
+      KAFKA_CLUSTERS_0_ZOOKEEPER: "${KAFKA_ZOOKEEPER_CONNECT:-zookeeper-1:2181,zookeeper-2:2182,zookeeper-3:2183}"
+      DYNAMIC_CONFIG_ENABLED: "true"
+    networks:
+      - eventomax-kafka_default
+
+networks:
+  eventomax-kafka_default:
+    external: true

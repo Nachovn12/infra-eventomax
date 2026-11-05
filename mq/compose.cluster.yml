@@ -1,0 +1,65 @@
+name: eventomax-mq-cluster
+
+services:
+  rabbitmq-1:
+    image: rabbitmq:4.3.6-management
+    container_name: eventomax-rabbitmq-1
+    hostname: rabbitmq-1
+    restart: unless-stopped
+    environment:
+      RABBITMQ_NODENAME: rabbit@rabbitmq-1
+      RABBITMQ_ERLANG_COOKIE: "${RABBITMQ_ERLANG_COOKIE:-eventomax_secret_cluster_cookie}"
+      RABBITMQ_DEFAULT_USER: "${RABBITMQ_DEFAULT_USER:-eventomax}"
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_DEFAULT_PASS:-eventomax}"
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - eventomax-mq-cluster-net
+    volumes:
+      - rabbitmq-1-cluster-data:/var/lib/rabbitmq
+      - ./rabbitmq.prod.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms && rabbitmq-diagnostics -q check_port_connectivity"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  rabbitmq-2:
+    image: rabbitmq:4.3.6-management
+    container_name: eventomax-rabbitmq-2
+    hostname: rabbitmq-2
+    restart: unless-stopped
+    environment:
+      RABBITMQ_NODENAME: rabbit@rabbitmq-2
+      RABBITMQ_ERLANG_COOKIE: "${RABBITMQ_ERLANG_COOKIE:-eventomax_secret_cluster_cookie}"
+      RABBITMQ_DEFAULT_USER: "${RABBITMQ_DEFAULT_USER:-eventomax}"
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_DEFAULT_PASS:-eventomax}"
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    networks:
+      - eventomax-mq-cluster-net
+    depends_on:
+      rabbitmq-1:
+        condition: service_healthy
+    volumes:
+      - rabbitmq-2-cluster-data:/var/lib/rabbitmq
+      - ./rabbitmq.prod.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms && rabbitmq-diagnostics -q check_port_connectivity"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  rabbitmq-1-cluster-data:
+  rabbitmq-2-cluster-data:
+
+networks:
+  eventomax-mq-cluster-net:
+    driver: bridge

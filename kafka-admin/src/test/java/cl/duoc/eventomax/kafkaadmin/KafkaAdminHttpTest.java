@@ -1,5 +1,7 @@
 package cl.duoc.eventomax.kafkaadmin;
 
+import cl.duoc.eventomax.kafkaadmin.dto.ConsumerGroupDetailResponse;
+import cl.duoc.eventomax.kafkaadmin.dto.ConsumerGroupSummaryResponse;
 import cl.duoc.eventomax.kafkaadmin.dto.TopicOperationResponse;
 import cl.duoc.eventomax.kafkaadmin.dto.TopicResponse;
 import cl.duoc.eventomax.kafkaadmin.dto.TopicSummaryResponse;
@@ -23,8 +25,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -110,14 +114,15 @@ class KafkaAdminHttpTest {
     @Test
     void adminCanGetTopicDetail() throws Exception {
         when(kafkaAdminService.getTopic("productions.events")).thenReturn(
-                new TopicResponse("productions.events", 3, 3, Collections.emptyList(), Collections.emptyMap())
+                new TopicResponse("productions.events", 3, 3, Collections.emptyList(), Map.of("retention.ms", "604800000"))
         );
 
         mvc.perform(get(BASE + "/topics/productions.events")
                 .header("Authorization", "Bearer test-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("productions.events"))
-                .andExpect(jsonPath("$.replicationFactor").value(3));
+                .andExpect(jsonPath("$.replicationFactor").value(3))
+                .andExpect(jsonPath("$.configs['retention.ms']").value("604800000"));
     }
 
     @Test
@@ -144,6 +149,82 @@ class KafkaAdminHttpTest {
     }
 
     @Test
+    void adminCanUpdateTopicConfigs() throws Exception {
+        when(kafkaAdminService.updateTopicConfigs(eq("productions.events"), any())).thenReturn(
+                new TopicOperationResponse("productions.events", "CONFIG_UPDATED", "Configuraciones actualizadas")
+        );
+
+        String payload = """
+                {
+                  "configs": {
+                    "retention.ms": "604800000",
+                    "cleanup.policy": "delete"
+                  }
+                }
+                """;
+
+        mvc.perform(put(BASE + "/topics/productions.events/configs")
+                .header("Authorization", "Bearer test-token")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.topic").value("productions.events"))
+                .andExpect(jsonPath("$.status").value("CONFIG_UPDATED"));
+    }
+
+    @Test
+    void adminCanUpdateTopicPartitions() throws Exception {
+        when(kafkaAdminService.updateTopicPartitions(eq("productions.events"), any())).thenReturn(
+                new TopicOperationResponse("productions.events", "PARTITIONS_UPDATED", "Particiones actualizadas a 6")
+        );
+
+        String payload = """
+                {
+                  "totalPartitions": 6
+                }
+                """;
+
+        mvc.perform(put(BASE + "/topics/productions.events/partitions")
+                .header("Authorization", "Bearer test-token")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.topic").value("productions.events"))
+                .andExpect(jsonPath("$.status").value("PARTITIONS_UPDATED"));
+    }
+
+    @Test
+    void adminCanListConsumerGroups() throws Exception {
+        when(kafkaAdminService.listConsumerGroups()).thenReturn(List.of(
+                new ConsumerGroupSummaryResponse("report-group", "STABLE", false),
+                new ConsumerGroupSummaryResponse("audit-group", "STABLE", false)
+        ));
+
+        mvc.perform(get(BASE + "/consumer-groups")
+                .header("Authorization", "Bearer test-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].groupId").value("report-group"))
+                .andExpect(jsonPath("$[0].state").value("STABLE"));
+    }
+
+    @Test
+    void adminCanGetConsumerGroupDetail() throws Exception {
+        when(kafkaAdminService.getConsumerGroup("report-group")).thenReturn(
+                new ConsumerGroupDetailResponse("report-group", "STABLE", "range", 1, List.of(
+                        new ConsumerGroupDetailResponse.MemberInfoResponse("member-1", "client-1", "/127.0.0.1", List.of("productions.events-0"))
+                ))
+        );
+
+        mvc.perform(get(BASE + "/consumer-groups/report-group")
+                .header("Authorization", "Bearer test-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.groupId").value("report-group"))
+                .andExpect(jsonPath("$.state").value("STABLE"))
+                .andExpect(jsonPath("$.members[0].clientId").value("client-1"));
+    }
+
+    @Test
     void invalidTopicNameIs400() throws Exception {
         String invalidPayload = """
                 {
@@ -160,4 +241,3 @@ class KafkaAdminHttpTest {
                 .andExpect(status().isBadRequest());
     }
 }
-
