@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: eventomax-kafka-admin
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${ENTRA_ISSUER_URI:https://login.microsoftonline.com/common/v2.0}
+
+eventomax:
+  security:
+    audience: ${ENTRA_AUDIENCE:api://eventomax}
+
+server:
+  port: ${SERVER_PORT:8088}
+  error:
+    include-message: never
+    include-stacktrace: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+
