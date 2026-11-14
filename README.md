@@ -1,85 +1,137 @@
-# infra-eventomax — Infraestructura Cloud Native: RabbitMQ Cluster, Rabbit Admin (`AmqpAdmin`) y Kafka (EP2)
+<a href="https://7dewsdyt7i.execute-api.us-east-1.amazonaws.com/kafka-ui/">
+  <img src="docs/assets/eventomax-infra-banner.svg" alt="EventoMax — Infraestructura y Mensajería" width="100%" />
+</a>
 
-**Asignatura:** Desarrollo Cloud Native I (`DSY1107`)
-**Caso de Estudio:** Caso 8 — Plataforma de Producción y Montaje de Eventos (**EventoMax**)
-**Equipo:** Ignacio Valeria, Benjamín Flores, Benjamín Espinoza
+> **Caso de Estudio 8:** Plataforma B2B de Producción y Montaje de Eventos &nbsp;|&nbsp; **Asignatura:** Desarrollo Cloud Native (`DSY1107`) &nbsp;|&nbsp; **Equipo:** Ignacio Valeria, Benjamín Flores, Benjamín Espinoza
 
----
+## Propósito del Repositorio
 
-## 1. Propósito del Repositorio y Rol en EventoMax
+`infra-eventomax` centraliza la definición reproducible de la capa de borde y mensajería distribuida de **EventoMax**:
 
-`infra-eventomax` centraliza la infraestructura de mensajería y administración programática de **EventoMax EP2**:
+- **Edge Reverse Proxy (`proxy/`):** Contenedor Nginx `1.27-alpine` que unifica bajo el puerto `8080` las rutas hacia `ms-eventomax-bff` (`/api/**`, `/swagger-ui/**`, `/v3/api-docs/**`), **Apache Kafka UI** (`/kafka-ui/**`) y **RabbitMQ Management** (`/rabbitmq/**`), preservando rutas codificadas (`%2F` de vhosts AMQP) y permitiendo payloads de hasta `15 MiB` para carga de imágenes en catálogo.
+- **Clúster Apache Kafka (`kafka/`):** 3 brokers Confluent (`kafka-1..3`, Zookeeper 3 nodos), inicialización idempotente de tópicos (`init-topics.sh`) con `replication-factor=3` y **Kafka UI** (`provectuslabs/kafka-ui:v0.7.2`) expuesta en modo consulta directo (`AUTH_TYPE=DISABLED`).
+- **Clúster RabbitMQ HA (`mq/`):** 2 nodos (`rabbitmq-1`, `rabbitmq-2`, imagen `4.3.6-management`) con topología predeclarada (`definitions.json`) para comandos operativos (`cmd.direct`, `cmd.topic`) y manejo de fallos (`cmd.dead.dlx`).
+- **Servicios Administrativos (`rabbit-admin/` y `kafka-admin/`):** APIs Spring Boot `4.1.1` (Java `25`) protegidas por OAuth2/JWT de Microsoft Entra ID (`ROLE_Admin` + `SCOPE_access_as_user`) para inspección y gestión controlada de brokers sin exponer credenciales de administración al navegador.
 
-1. **`mq/` — Clúster RabbitMQ 4.3.6 (Local y Producción Cloud EC2):**
-   - Topología declarativa (`definitions.json`) con **3 exchanges**, **6 colas durables** (3 operativas + 3 Dead Letter Queues) y **9 bindings**.
-   - Manifiesto productivo de **clúster de 2 nodos** (`rabbitmq-1` y `rabbitmq-2`) en `mq/compose.prod.yml` unido a la red externa `eventomax-net`, con `RABBITMQ_ERLANG_COOKIE` compartida, límites de memoria (`mem_limit: 512m` por nodo) y descubrimiento clásico de pares (`rabbitmq.prod.conf`).
-   - Manifiesto de laboratorio local (`mq/compose.yml` + `mq/prepare-local.py`) con identidades separadas de mínimo privilegio (`eventomax-app`, `eventomax-rabbit-admin`, `eventomax-demo-ui`).
-2. **`rabbit-admin/` — Microservicio de Administración Programática (`AmqpAdmin`):**
-   - Servicio Spring Boot 4.1.1 / Java 25 que cumple el requisito de la rúbrica EP2 de **crear, consultar y eliminar colas, exchanges y bindings programáticamente mediante `AmqpAdmin`**.
-   - Protegido con JWT de Microsoft Entra ID (rol exclusivo `Admin`) y acotado por prefijo de seguridad `demo.` para impedir la alteración accidental de las colas productivas `q.cmd.*` y `cmd.*`.
-   - Configurado con `mem_limit: 384m` y `HEALTHCHECK` activo en `rabbit-admin/docker-compose.prod.yml`.
-3. **`kafka/` — Stack Apache Kafka:**
-   - Manifiesto Docker Compose en `kafka/compose.yml` y `kafka/compose.prod.yml` con inicialización automática de los tópicos `productions.events`, `productions.events.report.DLT` y `productions.events.audit.DLT`.
-   - `kafka-ui` en producción (`kafka/compose.prod.yml`) configurado con `SERVER_SERVLET_CONTEXT_PATH=/kafka-ui`, `AUTH_TYPE=LOGIN_FORM` y bind seguro en `127.0.0.1:${KAFKA_UI_PORT:-8089}:8080`.
-4. **`proxy/` — Edge Reverse Proxy (`eventomax-edge-proxy`):**
-   - Contenedor Nginx (`nginx:1.27-alpine`) que unifica bajo el puerto de entrada `8080` (consumido vía HTTPS por AWS API Gateway) el BFF + Swagger UI (`/`), Kafka UI (`/kafka-ui/`) y RabbitMQ Management (`/rabbitmq/` con `management.path_prefix = /rabbitmq`).
+## Accesos en Vivo (Demo AWS)
 
----
+| Interfaz | Enlace HTTPS | Usuario | Contraseña / Método |
+| :--- | :--- | :--- | :--- |
+| **Portal Web EventoMax** | [Abrir Portal Web](https://eventomax-production-portal-app.s3.us-east-1.amazonaws.com/index.html) | Cuenta Microsoft Entra ID | Login federado OAuth 2.0 (PKCE) |
+| **Swagger UI (API BFF)** | [Abrir Swagger UI](https://7dewsdyt7i.execute-api.us-east-1.amazonaws.com/swagger-ui/index.html) · [JSON](https://7dewsdyt7i.execute-api.us-east-1.amazonaws.com/v3/api-docs) | Lectura pública | Pruebas sobre `/api/**` con `Bearer <JWT>` |
+| **Apache Kafka UI** | [Abrir Kafka UI](https://7dewsdyt7i.execute-api.us-east-1.amazonaws.com/kafka-ui/) | Sin login | Acceso directo a `eventomax-prod-cluster` |
+| **RabbitMQ Management** | [Abrir RabbitMQ UI](https://7dewsdyt7i.execute-api.us-east-1.amazonaws.com/rabbitmq/) | `eventomax` | `eventomax` |
 
-## 2. Arquitectura del Módulo y Diagrama
+*Nota operativa: los contenedores se ejecutan en **AWS Academy Learner Lab** distribuidos en 3 instancias (`ec2-eventomax-apps`, `ec2-eventomax-kafka`, `ec2-eventomax-mq`).*
+
+## Topología de Brokers y Servicios Admin
+
+### Apache Kafka (`kafka/init-topics.sh`)
+
+| Tópico | Particiones | Política de Limpieza | Retención | Uso en EventoMax |
+| :--- | :---: | :--- | :---: | :--- |
+| `productions.events` | `3` | `delete` | `7 días` | Eventos de dominio emitidos vía Outbox desde `ms-eventomax-productions` |
+| `audit.timeline` | `3` | `compact,delete` | `30 días` | Flujo compactado por clave de agregado (`productionId`) en `ms-eventomax-audit` |
+| `productions.events.report.DLT` | `3` | `delete` | `14 días` | Dead Letter Topic del consumidor analítico `report-group` |
+| `productions.events-audit-retry` | `3` | `delete` | `7 días` | Tópico de reintentos diferidos de `ms-eventomax-audit` |
+| `productions.events-audit-dlt` | `3` | `delete` | `14 días` | Dead Letter Topic del consumidor de auditoría |
+
+`kafka-admin/` (`port 8088`) expone `/api/kafka-admin/topics/**` y `/api/kafka-admin/consumer-groups/**` a través del BFF.
+
+### RabbitMQ (`mq/definitions.json` + `rabbit-admin/`)
+
+- **Exchanges:** `cmd.direct` (`direct`), `cmd.topic` (`topic`) y `cmd.dead.dlx` (`direct`).
+- **Colas operativas y DLQ:** `q.cmd.email` → `q.cmd.email.dlq`, `q.cmd.crew` → `q.cmd.crew.dlq` y `q.cmd.quote` → `q.cmd.quote.dlq`.
+- **Guardrails de `rabbit-admin/` (`expose 8080`):** restringe operaciones REST exclusivamente al namespace `demo.*` (`ResourcePolicy`), bloqueando con `403 Forbidden` mutaciones o lecturas sobre colas operativas `q.cmd.*` y exigiendo borrado condicional seguro (`ifUnused=true`, `ifEmpty=true`).
+
+## Stack Tecnológico
+
+<table>
+  <tr>
+    <td align="center" width="25%">
+      <img src="docs/assets/tech/docker.svg" width="36" height="36" alt="Docker &amp; Nginx" /><br />
+      <strong>Docker &amp; Nginx 1.27</strong>
+    </td>
+    <td align="center" width="25%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/assets/tech/apache-kafka-dark.svg" />
+        <img src="docs/assets/tech/apache-kafka.svg" width="36" height="36" alt="Apache Kafka" />
+      </picture><br />
+      <strong>Apache Kafka 7.8</strong>
+    </td>
+    <td align="center" width="25%">
+      <img src="docs/assets/tech/rabbitmq.svg" width="36" height="36" alt="RabbitMQ" /><br />
+      <strong>RabbitMQ 4.3 HA</strong>
+    </td>
+    <td align="center" width="25%">
+      <img src="docs/assets/tech/spring-boot.svg" width="36" height="36" alt="Spring Boot" /><br />
+      <strong>Java 25 · Boot 4.1</strong>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="25%">
+      <img src="docs/assets/tech/microsoft.svg" width="36" height="36" alt="Microsoft Entra ID" /><br />
+      <strong>Entra ID (JWT)</strong>
+    </td>
+    <td align="center" width="25%">
+      <img src="docs/assets/tech/aws.svg" width="36" height="36" alt="AWS API Gateway" /><br />
+      <strong>AWS API Gateway</strong>
+    </td>
+    <td align="center" width="25%">
+      <img src="docs/assets/tech/aws-ec2.svg" width="36" height="36" alt="Amazon EC2" /><br />
+      <strong>Amazon EC2 (×3)</strong>
+    </td>
+    <td align="center" width="25%">
+      <img src="docs/assets/tech/aws.svg" width="36" height="36" alt="Kafka UI" /><br />
+      <strong>Kafka UI v0.7.2</strong>
+    </td>
+  </tr>
+</table>
+
+## Distribución en AWS
 
 ```mermaid
 flowchart TB
-    subgraph group1["Red Compartida Docker eventomax-net"]
-        subgraph group2["Clúster RabbitMQ (mq/compose.prod.yml)"]
-            RMQ1["rabbitmq-1<br/>(rabbit@rabbitmq-1)"] <-->|"Erlang Cookie +<br/>Peer Discovery"| RMQ2["rabbitmq-2<br/>(rabbit@rabbitmq-2)"]
-        end
+    APIGW["AWS API Gateway<br/>HTTPS (7dewsdyt7i)"] --> Proxy["ec2-eventomax-apps · 52.20.127.84<br/>Nginx Edge Proxy (:8080)"]
 
-        subgraph group3["Topología Declarativa (definitions.json)"]
-            EX_DIRECT["cmd.direct (direct)"]
-            EX_TOPIC["cmd.topic (topic)"]
-            EX_DLX["cmd.dead.dlx (direct)"]
-            Q_WORK["q.cmd.email<br/>q.cmd.crew<br/>q.cmd.quote"]
-            Q_DLQ["q.cmd.email.dlq<br/>q.cmd.crew.dlq<br/>q.cmd.quote.dlq"]
-            EX_DIRECT --> Q_WORK
-            EX_TOPIC --> Q_WORK
-            Q_WORK -.->|"x-dead-letter-exchange"| EX_DLX --> Q_DLQ
-        end
-
-        RADMIN["rabbit-admin (:8080 / :8086)<br/>Spring AMQP AmqpAdmin<br/>Prefijo seguro: demo.*"] -->|"AMQP :5672"| RMQ1
-        PROD["ms-eventomax-productions"] -->|"SPRING_RABBITMQ_ADDRESSES<br/>rabbitmq-1:5672,rabbitmq-2:5672"| RMQ1
-        NOTIFY["ms-eventomax-notify"] -->|"SPRING_RABBITMQ_ADDRESSES<br/>rabbitmq-1:5672,rabbitmq-2:5672"| RMQ2
+    subgraph AppsNode["ec2-eventomax-apps (Microservicios y Borde)"]
+        direction LR
+        BFF["ms-eventomax-bff (:8081)"]
+        RAdm["rabbit-admin (:8080)<br/>Namespace demo.*"]
+        KAdm["kafka-admin (:8088)<br/>Tópicos y Groups"]
     end
+
+    subgraph KafkaNode["ec2-eventomax-kafka (172.31.20.204)"]
+        direction LR
+        KCluster["kafka-1..3 + zookeeper-1..3<br/>productions.events · audit.timeline"]
+        KUI["Kafka UI (:8089)<br/>AUTH_TYPE=DISABLED"]
+    end
+
+    subgraph MQNode["ec2-eventomax-mq (172.31.25.8)"]
+        direction LR
+        RMQ1["rabbitmq-1 (:5672 / :15672)<br/>cmd.direct · cmd.dead.dlx"]
+        RMQ2["rabbitmq-2 (:5672 / :15672)<br/>Cluster HA"]
+    end
+
+    Proxy -->|"/api/** · /swagger-ui/**"| BFF
+    Proxy -->|"/kafka-ui/**"| KUI
+    Proxy -->|"/rabbitmq/**"| RMQ1
+    BFF -->|"/api/rabbit-admin/**"| RAdm --> RMQ1
+    BFF -->|"/api/kafka-admin/**"| KAdm --> KCluster
 ```
 
----
-
-## 3. Endpoints de `rabbit-admin` (`/api/rabbit-admin`)
-
-Todos los endpoints exigen JWT válido de Microsoft Entra ID con `SCOPE_access_as_user` y rol `Admin`, y validan que los recursos operados comiencen con el prefijo `demo.`:
-
-| Método | Ruta | Acción en `AmqpAdmin` | Código Éxito |
-|---|---|---|---|
-| `POST` | `/api/rabbit-admin/queues` | `amqpAdmin.declareQueue(QueueBuilder.durable(name)...)` | `201 Created` |
-| `GET` | `/api/rabbit-admin/queues/{name}` | `amqpAdmin.getQueueInfo(name)` (mensajes y consumidores) | `200 OK` |
-| `DELETE` | `/api/rabbit-admin/queues/{name}?unusedOnly=false&emptyOnly=false` | `amqpAdmin.deleteQueue(name, unused, empty)` | `204 No Content` |
-| `POST` | `/api/rabbit-admin/exchanges` | `amqpAdmin.declareExchange(...)` (`direct`, `topic`, `fanout`, `headers`) | `201 Created` |
-| `DELETE` | `/api/rabbit-admin/exchanges/{name}` | `amqpAdmin.deleteExchange(name)` | `204 No Content` |
-| `POST` | `/api/rabbit-admin/bindings` | `amqpAdmin.declareBinding(...)` | `201 Created` |
-| `DELETE` | `/api/rabbit-admin/bindings` | `amqpAdmin.removeBinding(...)` | `204 No Content` |
-
----
-
-## 4. Ejecución Local y Pruebas Automatizadas
+## Validación y Despliegue por Módulo
 
 ```bash
-# 1. Ejecutar pruebas unitarias y de seguridad en rabbit-admin (95 tests)
-mvn -f rabbit-admin/pom.xml clean verify
+# Red privada compartida en Docker
+docker network create eventomax-net
 
-# 2. Validar sintaxis de los manifiestos Compose
+# 1. Validar configuración de Compose (Kafka, MQ, Edge Proxy y Admins)
+docker compose --env-file .env.prod.example -f kafka/compose.prod.yml config -q
 docker compose --env-file .env.prod.example -f mq/compose.prod.yml config -q
-docker compose --env-file rabbit-admin/.env.prod.example -f rabbit-admin/docker-compose.prod.yml config -q
-docker compose -f kafka/compose.yml config -q
-```
+docker compose --env-file .env.prod.example -f proxy/compose.prod.yml config -q
 
-**Resultado certificado en EP2:** `Tests run: 95, Failures: 0, Errors: 0, Skipped: 7 — BUILD SUCCESS`.
+# 2. Pruebas automatizadas y build de rabbit-admin y kafka-admin
+cd rabbit-admin && mvn -B -ntp verify && cd ..
+cd kafka-admin && ./mvnw -B -ntp verify && cd ..
+```
