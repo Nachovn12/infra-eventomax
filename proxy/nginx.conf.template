@@ -1,0 +1,83 @@
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ""      close;
+}
+
+map $http_x_forwarded_proto $forwarded_proto {
+    default $http_x_forwarded_proto;
+    ""      $scheme;
+}
+
+server {
+    listen 80;
+    server_name _;
+
+    # Keep redirects relative so browsers remain on AWS API Gateway HTTPS origin.
+    absolute_redirect off;
+
+    # Allow compressed catalog image uploads (WebP/JPEG Data URLs).
+    client_max_body_size 15m;
+
+    # Re-resolve Docker service names dynamically without failing on startup.
+    resolver 127.0.0.11 valid=30s ipv6=off;
+
+    location = /healthz {
+        access_log off;
+        add_header Content-Type text/plain;
+        return 200 "ok\n";
+    }
+
+    # --- Kafka UI (/kafka-ui) ---
+    location = /kafka-ui {
+        return 301 /kafka-ui/;
+    }
+
+    location /kafka-ui/ {
+        set $kafka_ui_upstream ${KAFKA_UI_UPSTREAM};
+        proxy_pass http://$kafka_ui_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_redirect ~^https?://[^/]+(/kafka-ui/.*)$ $1;
+        proxy_read_timeout 60s;
+    }
+
+    # --- RabbitMQ Management UI (/rabbitmq/) ---
+    location = /rabbitmq {
+        return 301 /rabbitmq/;
+    }
+
+    location /rabbitmq/ {
+        set $rabbitmq_upstream ${RABBITMQ_MGMT_UPSTREAM};
+        # Passing variable without URI suffix preserves encoded %2F vhost paths.
+        proxy_pass http://$rabbitmq_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_redirect ~^https?://[^/]+(/rabbitmq/.*)$ $1;
+        proxy_buffering off;
+        proxy_read_timeout 60s;
+    }
+
+    # --- EventoMax BFF: /api/**, /actuator/**, /swagger-ui/**, /v3/api-docs/** ---
+    location / {
+        set $bff_upstream ${BFF_UPSTREAM};
+        proxy_pass http://$bff_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_redirect ~^https?://[^/]+(/(?:swagger-ui|v3/api-docs).*)$ $1;
+        proxy_read_timeout 60s;
+    }
+}

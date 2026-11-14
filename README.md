@@ -19,8 +19,10 @@
    - Protegido con JWT de Microsoft Entra ID (rol exclusivo `Admin`) y acotado por prefijo de seguridad `demo.` para impedir la alteración accidental de las colas productivas `q.cmd.*` y `cmd.*`.
    - Configurado con `mem_limit: 384m` y `HEALTHCHECK` activo en `rabbit-admin/docker-compose.prod.yml`.
 3. **`kafka/` — Stack Apache Kafka:**
-   - Manifiesto Docker Compose en `kafka/compose.yml` con inicialización automática de los tópicos `productions.events`, `productions.events.report.DLT` y `productions.events.audit.DLT`.
-   - `kafka-ui` mapeado en `${KAFKA_UI_PORT:-18080}:8080` para evitar cualquier colisión en el puerto `8080` con `ms-eventomax-bff`.
+   - Manifiesto Docker Compose en `kafka/compose.yml` y `kafka/compose.prod.yml` con inicialización automática de los tópicos `productions.events`, `productions.events.report.DLT` y `productions.events.audit.DLT`.
+   - `kafka-ui` en producción (`kafka/compose.prod.yml`) configurado con `SERVER_SERVLET_CONTEXT_PATH=/kafka-ui`, `AUTH_TYPE=LOGIN_FORM` y bind seguro en `127.0.0.1:${KAFKA_UI_PORT:-8089}:8080`.
+4. **`proxy/` — Edge Reverse Proxy (`eventomax-edge-proxy`):**
+   - Contenedor Nginx (`nginx:1.27-alpine`) que unifica bajo el puerto de entrada `8080` (consumido vía HTTPS por AWS API Gateway) el BFF + Swagger UI (`/`), Kafka UI (`/kafka-ui/`) y RabbitMQ Management (`/rabbitmq/` con `management.path_prefix = /rabbitmq`).
 
 ---
 
