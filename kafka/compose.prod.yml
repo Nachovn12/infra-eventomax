@@ -207,12 +207,17 @@ services:
       kafka-3:
         condition: service_healthy
     ports:
-      - "${KAFKA_UI_PORT:-8080}:8080"
+      - "127.0.0.1:${KAFKA_UI_PORT:-8089}:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: eventomax-prod-cluster
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:29092,kafka-2:29093,kafka-3:29094
       KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper-1:2181,zookeeper-2:2182,zookeeper-3:2183
       DYNAMIC_CONFIG_ENABLED: "true"
+      SERVER_SERVLET_CONTEXT_PATH: /kafka-ui
+      SERVER_FORWARD_HEADERS_STRATEGY: FRAMEWORK
+      AUTH_TYPE: "${KAFKA_UI_AUTH_TYPE:-DISABLED}"
+      SPRING_SECURITY_USER_NAME: "${KAFKA_UI_USER:-eventomax_admin}"
+      SPRING_SECURITY_USER_PASSWORD: "${KAFKA_UI_PASSWORD:-eventomax}"
 
   kafka-init:
     image: confluentinc/cp-kafka:7.8.11

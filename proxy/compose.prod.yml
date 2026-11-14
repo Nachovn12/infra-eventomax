@@ -1,0 +1,30 @@
+name: eventomax-edge-proxy
+
+services:
+  edge-proxy:
+    image: nginx:1.27-alpine
+    container_name: eventomax-edge-proxy
+    mem_limit: 128m
+    restart: unless-stopped
+    ports:
+      - "${EDGE_PROXY_PORT:-8080}:80"
+    environment:
+      BFF_UPSTREAM: "${BFF_UPSTREAM:-ms-eventomax-bff:8080}"
+      KAFKA_UI_UPSTREAM: "${KAFKA_UI_UPSTREAM:-eventomax-kafka-ui:8080}"
+      RABBITMQ_MGMT_UPSTREAM: "${RABBITMQ_MGMT_UPSTREAM:-rabbitmq-1:15672}"
+      NGINX_ENVSUBST_FILTER: "^(BFF_UPSTREAM|KAFKA_UI_UPSTREAM|RABBITMQ_MGMT_UPSTREAM)$"
+    volumes:
+      - ./nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - eventomax-net
+
+networks:
+  eventomax-net:
+    name: eventomax-net
+    external: true
