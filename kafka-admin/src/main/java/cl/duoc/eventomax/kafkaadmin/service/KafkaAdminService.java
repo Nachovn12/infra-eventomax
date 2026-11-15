@@ -9,7 +9,9 @@ import cl.duoc.eventomax.kafkaadmin.dto.TopicRequest;
 import cl.duoc.eventomax.kafkaadmin.dto.TopicResponse;
 import cl.duoc.eventomax.kafkaadmin.dto.TopicSummaryResponse;
 import org.apache.kafka.clients.admin.*;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.Node;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.TopicPartitionInfo;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.GroupIdNotFoundException;
@@ -45,7 +47,9 @@ public class KafkaAdminService {
             "report-group",
             "report-service-group",
             "audit-group",
-            "audit-service-group"
+            "audit-service-group",
+            "audit-timeline-group",
+            "audit-group-audit-retry"
     );
 
     private static final Set<String> ALLOWED_CONFIG_KEYS = Set.of(
@@ -352,12 +356,19 @@ public class KafkaAdminService {
                     ))
                     .toList();
 
+            List<ConsumerGroupDetailResponse.PartitionOffsetResponse> partitionOffsets = fetchPartitionOffsets(groupId, desc);
+            long totalLag = partitionOffsets.stream()
+                    .mapToLong(ConsumerGroupDetailResponse.PartitionOffsetResponse::lag)
+                    .sum();
+
             return new ConsumerGroupDetailResponse(
                     desc.groupId(),
                     desc.state().name(),
                     desc.partitionAssignor(),
                     coordinatorId,
-                    members
+                    members,
+                    totalLag,
+                    partitionOffsets
             );
 
         } catch (ExecutionException e) {
@@ -396,6 +407,53 @@ public class KafkaAdminService {
         } catch (TimeoutException e) {
             throw new RuntimeException("Timeout al eliminar grupo de consumidores en Kafka", e);
         }
+    }
+
+    private List<ConsumerGroupDetailResponse.PartitionOffsetResponse> fetchPartitionOffsets(
+            String groupId, ConsumerGroupDescription desc)
+            throws InterruptedException, ExecutionException, TimeoutException {
+        ListConsumerGroupOffsetsResult offsetsResult = adminClient.listConsumerGroupOffsets(groupId);
+        Map<TopicPartition, OffsetAndMetadata> committed = offsetsResult != null
+                ? offsetsResult.partitionsToOffsetAndMetadata().get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                : Collections.emptyMap();
+        if (committed == null) {
+            committed = Collections.emptyMap();
+        }
+
+        Set<TopicPartition> allPartitions = new java.util.HashSet<>(committed.keySet());
+        if (desc != null && desc.members() != null) {
+            for (org.apache.kafka.clients.admin.MemberDescription m : desc.members()) {
+                if (m.assignment() != null && m.assignment().topicPartitions() != null) {
+                    allPartitions.addAll(m.assignment().topicPartitions());
+                }
+            }
+        }
+        if (allPartitions.isEmpty()) {
+            return List.of();
+        }
+
+        Map<TopicPartition, OffsetSpec> latestRequests = allPartitions.stream()
+                .collect(Collectors.toMap(tp -> tp, tp -> OffsetSpec.latest()));
+        ListOffsetsResult endOffsetsResult = adminClient.listOffsets(latestRequests);
+        Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> endOffsets = endOffsetsResult != null
+                ? endOffsetsResult.all().get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                : Collections.emptyMap();
+
+        final Map<TopicPartition, OffsetAndMetadata> finalCommitted = committed;
+        return allPartitions.stream()
+                .map(tp -> {
+                    OffsetAndMetadata committedMeta = finalCommitted.get(tp);
+                    ListOffsetsResult.ListOffsetsResultInfo endInfo = endOffsets.get(tp);
+                    long endOffset = endInfo != null ? endInfo.offset() : 0L;
+                    long currentOffset = committedMeta != null ? committedMeta.offset() : endOffset;
+                    long lag = Math.max(0L, endOffset - currentOffset);
+                    return new ConsumerGroupDetailResponse.PartitionOffsetResponse(
+                            tp.topic(), tp.partition(), currentOffset, endOffset, lag
+                    );
+                })
+                .sorted(Comparator.comparing(ConsumerGroupDetailResponse.PartitionOffsetResponse::topic)
+                        .thenComparingInt(ConsumerGroupDetailResponse.PartitionOffsetResponse::partition))
+                .toList();
     }
 
     private void validateConfigKeys(Map<String, String> configs) {
