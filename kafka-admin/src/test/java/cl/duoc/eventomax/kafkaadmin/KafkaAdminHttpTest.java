@@ -213,6 +213,8 @@ class KafkaAdminHttpTest {
         when(kafkaAdminService.getConsumerGroup("report-group")).thenReturn(
                 new ConsumerGroupDetailResponse("report-group", "STABLE", "range", 1, List.of(
                         new ConsumerGroupDetailResponse.MemberInfoResponse("member-1", "client-1", "/127.0.0.1", List.of("productions.events-0"))
+                ), 3L, List.of(
+                        new ConsumerGroupDetailResponse.PartitionOffsetResponse("productions.events", 0, 12L, 15L, 3L)
                 ))
         );
 
@@ -221,6 +223,10 @@ class KafkaAdminHttpTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.groupId").value("report-group"))
                 .andExpect(jsonPath("$.state").value("STABLE"))
+                .andExpect(jsonPath("$.totalLag").value(3))
+                .andExpect(jsonPath("$.partitionOffsets[0].currentOffset").value(12))
+                .andExpect(jsonPath("$.partitionOffsets[0].endOffset").value(15))
+                .andExpect(jsonPath("$.partitionOffsets[0].lag").value(3))
                 .andExpect(jsonPath("$.members[0].clientId").value("client-1"));
     }
 

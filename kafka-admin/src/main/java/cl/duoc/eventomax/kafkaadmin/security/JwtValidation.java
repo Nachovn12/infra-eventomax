@@ -8,8 +8,6 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.util.Assert;
 
-import java.time.Instant;
-
 public final class JwtValidation {
     private JwtValidation() {}
 
@@ -18,10 +16,9 @@ public final class JwtValidation {
         Assert.hasText(audience, "ENTRA_AUDIENCE is required");
 
         OAuth2TokenValidator<Jwt> required = jwt -> {
-            Object aud = jwt.getClaims().get("aud");
-            boolean matches = aud instanceof java.util.Collection<?> values
-                    && values.stream().allMatch(String.class::isInstance) && values.contains(audience);
-            if (!matches || !(jwt.getClaims().get("exp") instanceof Instant)) {
+            java.util.List<String> audiences = jwt.getAudience();
+            boolean matches = audiences != null && audiences.contains(audience);
+            if (!matches || jwt.getExpiresAt() == null) {
                 return OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token", "Required claims are invalid", null));
             }
             return OAuth2TokenValidatorResult.success();
