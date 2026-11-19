@@ -8,6 +8,15 @@ map $http_x_forwarded_proto $forwarded_proto {
     ""      $scheme;
 }
 
+# AWS HTTP API decodes %2F in Management paths for the default RabbitMQ vhost (/).
+# Restore it only for EventoMax's named queues/exchanges; preserve all other paths.
+# $request_uri preserves original encoding and query string for unaffected requests.
+map $request_uri $rabbitmq_management_request_uri {
+    default $request_uri;
+    ~^(/rabbitmq/api/queues)/(q\.cmd\.[A-Za-z0-9._-]+)(/[^?]*)?(\?.*)?$ $1/%2F/$2$3$4;
+    ~^(/rabbitmq/api/exchanges)/((?:cmd|amq)\.[A-Za-z0-9._-]+)(/[^?]*)?(\?.*)?$ $1/%2F/$2$3$4;
+}
+
 server {
     listen 80;
     server_name _;
@@ -55,7 +64,8 @@ server {
     location /rabbitmq/ {
         set $rabbitmq_upstream ${RABBITMQ_MGMT_UPSTREAM};
         # Passing variable without URI suffix preserves encoded %2F vhost paths.
-        proxy_pass http://$rabbitmq_upstream;
+        # A variable URI passes encoded %2F unchanged to the RabbitMQ upstream.
+        proxy_pass http://$rabbitmq_upstream$rabbitmq_management_request_uri;
         proxy_http_version 1.1;
         proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
